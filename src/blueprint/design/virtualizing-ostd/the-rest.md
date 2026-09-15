@@ -2,24 +2,119 @@
 
 *Part of question 2. Virtualizes `boot`, `smp`, `power`, `console`, `log`, `panic`, the `#[ostd::main]` and `#[ostd::panic_handler]` expansions, and the `arch` surface. Discharges invariant I8's obligation to list every tenant-visible difference.*
 
-## Boot
+## Boot {#boot}
 
-A kernelet is not booted; it is entered. `_kernelet_entry` runs on the boot task with the window populated, and vOSTD's initialization is OSTD's with everything the machine did already removed: no early allocator, no serial port, no CPU feature enabling, no kernel page table construction, no `smp::init`, no boot page table to dismiss (checked on the tree: `ostd/src/lib.rs`, `init`). The boot task is pinned to virtual CPU 0, since `main` initializes the boot CPU's per-CPU state and pins its idle loop there. What remains, in the tree's order where the tree has one:
+The selected startup model follows native OSTD: bootstrap has a stack but no Task, and `Task::current()` is None until the first context switch.
+Host OSTD owns a temporary startup stack per vCPU. Host scheduling reuses the vCPU Thread's original stack; each return from internal execution continues a saved call on this stack.
+The [stack and return lifetimes](tasks.md#stack-return) distinguish this persistent Host call stack from the temporary startup stack and each internal Task's stack.
+The first internal switch retires startup. Pause and transfer requests return to the vCPU execution loop, while only final stop lets `enter_vcpu` return to its caller.
+vCPU 0 enters the ELF's `_kernelet_entry` once, initializes the shared vOSTD state, then calls the kernelet kernel's `__ostd_main`.
+No extra boot-only vCPU or temporary schedulable boot Task is created.
 
-1. Store the service table pointer and read `BootArgs`.
-2. Parse the command line from `BootArgs` with the kernel's injected `#[ostd::early_cmdline_parser]`, as `boot::parse_early_cmdline` does on the tree from the bootloader's information, and initialize the log with it: `log::init` sets the maximum level from the parsed `EarlyCmdline` (the static default is `Off`; checked on the tree: `ostd/src/log/logger.rs`) and installs the bridge from the `log` crate. Without this step no record is ever emitted.
-3. Read the host-written grant table and hand the initial runs to the frame allocator; the host has already mapped them and their metadata ([Memory](memory.md)).
-4. Set up the per-virtual-CPU replicas and mark virtual CPU 0 current; allocate the kernelet-side running-task table, sized by `max_tasks`, and the body table, and register the boot task as name 0.
-5. Unpark the workers, which `create` spawned `SPAWN_SUSPENDED` so that no job could be delivered before the tables of step 4 exist; a `raise_irq` before this point leaves its pending bit set and is the worker's first job ([control half](../kernelet-api-control.md)).
-6. Run the image's `.init_array`, which is how components register themselves, as on the host.
-7. Clear `IN_BOOTSTRAP_CONTEXT`, which the template initializes `true` and which silences `might_sleep` while set (checked on the tree: `ostd/src/task/atomic_mode.rs`), since from here on the kernelet is on a task.
-8. Call `__ostd_main`, which is the kernel proper's `main`.
+The ELF entry is proposed vOSTD code in `ostd/src/kernelet/entry.rs`, selected by the kernelet build.
+The current tree provides native `ostd/src/lib.rs::init` and the `__ostd_main` macro expansion; it does not yet implement this kernelet entry.
+The [image contract](../builds-and-images.md) supplies the validated entry address and these host-owned arguments:
+
+```rust
+// Proposed vOSTD entry storage. These are references to published read-only
+// host tables, not references to host Task/Thread objects.
+static SERVICES: Once<&'static ServiceTable> = Once::new();
+static BOOT_ARGS: Once<&'static BootArgs> = Once::new();
+
+pub(crate) fn service_table() -> &'static ServiceTable {
+    *SERVICES.get().expect("entry installed the service table")
+}
+
+unsafe extern "Rust" {
+    fn __ostd_main() -> !; // Emitted in this image by #[ostd::main].
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn _kernelet_entry(
+    services: &'static ServiceTable,
+    boot: &'static BootArgs,
+) -> ! {
+    SERVICES.call_once(|| services);
+    BOOT_ARGS.call_once(|| boot);
+    // The vOSTD implementation of init validates BootArgs/source compatibility.
+    // SAFETY: Only vCPU 0 enters here, once, on the prepared startup stack.
+    unsafe { crate::init() };
+    // SAFETY: The kernel's macro supplies this symbol in the same ELF.
+    unsafe { __ostd_main() }
+}
+```
+
+The two builds select different implementations of `ostd::init` at compile time. In the kernelet image, that function performs the following operations in order:
+
+1. Validate BootArgs, source hash, shared descriptors and the service table before exposing their accessors to the kernel.
+2. Parse the early command line and initialize logging with the native boot/log code. The logger's default level is Off.
+3. Initialize the virtual CPU-local replicas and frame allocator from the host-published grant. Host OSTD has already mapped the pages and metadata.
+4. Initialize the local task/synchronization machinery with each current-task slot empty. Publish no runnable Task before its scheduler can be used.
+5. Run `.init_array` once, as native `invoke_ffi_init_funcs` does.
+6. Clear `IN_BOOTSTRAP_CONTEXT` as native `init` does, then return to `_kernelet_entry`, which calls `__ostd_main`.
+
+Clearing that flag ends the framework's early-initialization exemption; it does not assert that a Task already exists.
+The native tree also clears it before kernel `main` while current is still None.
+Physical CPU feature enabling, early allocation, serial setup, page-table construction, physical SMP startup and boot-page-table dismissal are omitted in the kernelet build because the host already performed them.
+
+Kernel `main` initializes and injects its ClassScheduler, initializes the boot CPU's kernel state, registers `ap_init`, and creates its idle Thread.
+The [Task startup sequence](tasks.md#task-execution) contains the native `main`/`ap_init` bodies and the first enqueue/switch path.
 
 `boot::boot_info` is virtualized without a crossing: a `BootInfo` synthesized from `BootArgs` with the bootloader name `"kernelet"`, the command line, `memory_regions` holding one `Usable` region per initial run, so that the kernel proper's `MemTotal`, which is the sum of the `Usable` regions (checked on the tree: `kernel/core/src/vm/mod.rs`), is the initial grant; and no ACPI, framebuffer or initramfs arguments. An initial RAM file system, if the endovisor provides one, arrives as a block device, not as a boot module. `MemoryRegion`, `MemoryRegionType` and `EarlyCmdline` are identical types; the two constructors `MemoryRegion::kernel` and `MemoryRegion::module`, which use the absent kernel offset and linear map (checked: `ostd/src/boot/memory_region.rs`), are absent, and nothing in the kernel proper calls them.
 
-`boot::smp::register_ap_entry(entry)` is virtualized. On the host kernel the entry is stored and each application processor runs it when OSTD boots the processors during `init`, before `main` (checked on the tree: `ostd/src/boot/smp.rs`, `arch/x86/mod.rs`); the kernel proper's entry, `ap_init`, initializes that CPU's per-CPU state and spawns its idle thread (checked: `kernel/core/src/init.rs`). In vOSTD `register_ap_entry` spawns, at once, one task per virtual CPU above 0, pinned there, whose body runs `entry` and then ends with `task_exit`; the tasks run concurrently with the rest of `main`, as the processors do on hardware. The kernel proper's `init_on_each_cpu` therefore runs on every virtual CPU as it does on every real one; its per-CPU idle thread is not spawned in the kernelet configuration, since a virtual CPU with nothing to run is a host CPU the host uses ([Tasks](tasks.md), register D67). `smp::inter_processor_call` is absent.
+`boot::smp::register_ap_entry(entry)` retains the native role: publish the AP initialization hook after shared initialization is ready.
+A secondary enters `EntryTable::run_task(ENTRY_SECONDARY_VCPU, vcpu_id)`, with no current Task, and waits for that hook before using initialized virtual CPU-local state.
+This can reuse the native `ap_early_entry` publication loop: it reads the kernelet's own AP-entry slot and spins until publication; host physical preemption and stop remain possible.
+Host OSTD does not read a kernelet Rust function pointer out of that slot or invoke the AP hook itself.
+The vOSTD secondary path invokes it inside the image, initializes that vCPU's idle Thread, and transfers into its first Task.
+Secondaries do not rerun global `_kernelet_entry`, `.init_array` or `__ostd_main`.
+The boot vCPU must publish the hook before waiting for AP work. After first scheduling, each idle closure creates its pinned ordinary interrupt-worker Thread as shown in [Tasks](tasks.md#objects); no worker callback runs on a bootstrap stack. Callback infrastructure is ready before this first idle entry.
+Physical `smp::inter_processor_call` remains absent; vCPU notification crosses through the service table.
 
-**The end of `main`, and what a proc macro can see.** `#[ostd::main]` expands to a function that calls the kernel's `main`, yields, asserts that there is no current task, and powers off (checked on the tree: `ostd/libs/ostd-macros`, `ostd_main_body`); that assertion holds on the host because the host's `main` runs in the bootstrap context, not on a task. Inside a kernelet `main` runs on the boot task, so after `main` returns the boot task ends with `task_exit`, and the kernelet lives on in the threads `main` spawned; nothing refers to the boot task after that, and its 512 KiB stack goes back to the host. A proc macro emits fixed tokens and cannot see `ostd`'s feature, so the expansion is changed in both builds to end with a call, `::ostd::boot::__main_epilogue()`, whose body in OSTD carries the `cfg`: the tree's three statements in OSTD, `task_exit` in vOSTD. The `#[ostd::main]` attribute the kernel proper writes is unchanged, and the OSDK's `#[ostd::test_main]` expansion ends with the same call, so a test kernel behaves the same way. The macro change is a change to the tree in both builds.
+The relevant code reuses `AP_LATE_ENTRY` and `register_ap_entry` from `ostd/src/boot/smp.rs`.
+The secondary's host entry establishes its vCPU identity and startup stack; this tail waits before using the vOSTD state published by boot-vCPU initialization:
+
+```rust
+// vOSTD's boot/smp.rs: the existing image-local publication slot and API.
+static AP_LATE_ENTRY: Once<fn()> = Once::new();
+
+pub fn register_ap_entry(entry: fn()) {
+    AP_LATE_ENTRY.call_once(|| entry);
+}
+
+// Kernelet branch reached by EntryTable::run_task(ENTRY_SECONDARY_VCPU, vcpu_id).
+fn secondary_bootstrap() -> ! {
+    let ap_entry = AP_LATE_ENTRY.wait(); // Spins locally; no Waiter or Task yet.
+    ap_entry();                        // Kernel ap_init: local init, spawn idle.
+    Task::yield_now();                 // Native fallback if spawn did not switch.
+    unreachable!("first scheduling from bootstrap must not return");
+}
+```
+
+**The end of main uses the native expansion.**
+With bootstrap current still None, the existing `ostd_main_body` emitted by `#[ostd::main]` is applicable in both builds:
+
+```rust
+// Equivalent to the generated body, with imports for readability.
+use ostd::{
+    power::{poweroff, ExitCode},
+    task::Task,
+};
+
+let () = main();
+Task::yield_now();
+assert!(Task::current().is_none());
+poweroff(ExitCode::Success);
+```
+
+`let () = main()` preserves the generated body's check that `main` returns `()`.
+The actual macro uses absolute paths to avoid depending on imports at its call site.
+
+If task publication already switched into idle, bootstrap never reaches this epilogue.
+Otherwise yield performs the first selection; a successful first switch likewise never returns here.
+Only a kernel main that leaves no runnable Task reaches poweroff, just as on the host; vOSTD's poweroff uses the stop service.
+No new main-epilogue abstraction or proc-macro change is needed for this selected startup model.
+The same reasoning applies to the native `#[ostd::test_main]` expansion.
 
 ## Power and exit
 
@@ -47,7 +142,7 @@ An allocation failure the kernel cannot absorb reaches `#[alloc_error_handler]`,
 
 ## `ktest`
 
-The kernel's unit tests run inside a kernel; a test of the kernel proper in its kernelet configuration must run inside a kernelet. `#[ktest]` and `.ktest_array` are identical, and the harness is the endovisor's: a test kind of kernelet image whose `main` runs the test array, created by a host-side test runner through the control half, with its log routed to the runner and its exit code the verdict. The OSDK's `test_main` and `test_panic_handler` expansions go through the same `__main_epilogue` and `__handler_entry`, so a `#[should_panic]` test's panic is caught by the harness as today and is reported to the host as an oops, which the test runner's budget must allow for. That is an Implementation-chapter matter; the design's requirement is only that nothing on this page prevents it, and nothing does.
+The kernel's unit tests run inside a kernel; a test of the kernel proper in its kernelet configuration must run inside a kernelet. `#[ktest]` and `.ktest_array` are identical, and the harness is the endovisor's: a test kind of kernelet image whose `main` runs the test array, created by a host-side test runner through the control half, with its log routed to the runner and its exit code the verdict. The OSDK's `test_main` keeps the native bootstrap epilogue, while `test_panic_handler` uses `__handler_entry`, so a `#[should_panic]` test's panic is caught by the harness as today and is reported to the host as an oops, which the test runner's budget must allow for. That is an Implementation-chapter matter; the design's requirement is only that nothing on this page prevents it, and nothing does.
 
 ## What a tenant sees
 
@@ -59,13 +154,13 @@ The kernel's unit tests run inside a kernel; a test of the kernel proper in its 
 
 ## Costs
 
-- Entry: a few microseconds of initialization on the boot task (*estimated*); handing the runs to the allocator and the replica setup dominate. The boot task's stack is returned when `main` returns, and each application-processor entry costs a transient task and stack, `num_vcpus − 1` of them.
+- Entry: initialization uses a temporary startup stack per vCPU, reclaimed after first transfer or stop. Count the persistent vCPU Thread, idle and virtual interrupt worker stacks separately. Initialization and complete stack costs have not been measured for this startup path.
 - Per log record: the formatting into a kernelet-side buffer, one crossing, a copy of up to 1 KiB, and the hook, when under the rate limit; a dropped record costs the crossing and a counter; the console write the `logger` component makes, as today.
 - Per oops: the kernel's own `format!` and `Box` for the `OopsInfo` and the unwinding, as on a host kernel with oopses enabled; plus the stash copy, one crossing and the hook.
 
 ## What this page decides
 
-- **`main` runs on the boot task, which exits when `main` returns** (register D26, revised); the alternative, ending the kernelet when `main` returns, would end it before its init process runs, since the kernel proper's `main` returns after spawning the first kernel thread (checked on the tree: `kernel/core/src/init.rs`); parking the boot task instead would hold a 512 KiB stack for the sandbox's life for nothing.
+- **Bootstrap has no internal current Task** (D26 revised). The native idle-thread publication triggers the first transfer; its local Task obtains a stack through the same task_create service as ordinary tasks. The startup stack retires after that transfer. The native main epilogue remains applicable, including shutdown when no Task was created.
 - **Init exiting ends the kernelet as an exit, not a panic** (register D27), by one `cfg` line in the kernel proper; without it the runtime could not tell a clean shutdown from a crash.
 - **Every caught panic is reported to the host, from OSTD's `catch_unwind`, with a message stashed at the handler's entry** (register D28), so that an oops budget can be a host policy rather than only the kernel proper's own constant. The alternative, a `cfg` line in `catch_panics_as_oops`, would put the report in the kernel proper and would be the second such line for one mechanism.
 - **vOSTD enables the kernel proper's oops path** (register D48) with one `cfg` line on `PANIC_ON_OOPS`. The alternative, leaving it off as the host does, makes every tenant-kernel panic end the sandbox and leaves D28 with nothing to count.
