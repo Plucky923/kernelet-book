@@ -23,7 +23,7 @@ The Paper is not merely decorated with the old task model; it is built on it:
 | `overview/challenges.md` | "every deferred piece of work must run on the kernelet's own **worker task** and be charged to it" | **false**: the worker task is deleted | **kept** |
 | `overview/goals.md` | "A second scheduler runs beneath the guest's, so the guest's decisions about which thread to run are made twice" | still true *of machine virtualization*, but the contrast it draws collapses | **kept**, one clause |
 
-The back-port installs a second scheduler on both hosts and deletes the worker task. Two Overview sentences therefore become plainly false, and the Overview is inside the Blueprint and inside the stated scope, so they are fixed in the back-port pass (§6). The four Paper sentences wait.
+The back-port installs a second scheduler on both hosts and deletes the worker task. Two Overview sentences therefore become plainly false, and the Overview is inside the Blueprint and inside the stated scope, so they are fixed in pass 3 (§6). The four Paper sentences wait.
 
 **What the debt is, exactly.** After pass 2 the Blueprint will be internally consistent and say *two schedulers*; the Paper will say *one*; and `AGENTS.md` says that where the two disagree, **the Paper wins**. A reader following the book's own precedence rule will therefore get the wrong answer about the central mechanism until the debt is paid. That is sharper than leaving both out of line, not softer, and it is the price of the decision.
 
@@ -262,7 +262,9 @@ So: the *risk* drops on one path and the *count of unverified claims goes up*, n
 
 ### 4.4 What it buys
 
-- **A tenant's thread count stops buying machine share.** The currency changes from tenant-chosen (how many threads it runs) to operator-chosen (how many virtual CPUs it was given). That is the honest claim, and it is a real gain. It is *not* "fairness becomes a property of the design": the Linux argument's second step is "**the control group** bounds the N tasks", and Asterinas has no group scheduler — *checked on the tree*: `kernel/core/src/sched/sched_class/fair.rs` carries a per-*thread* weight of 1024·1.25<sup>−nice</sup> and there is no group entity anywhere under `kernel/core/src/sched/`. So a sandbox's share is the sum over its host threads: *N* carriers plus its device threads. Two sandboxes at the same `nice` with *N* = 2 and *M* = 8 get one share against four, and there is no "equal weight" to set. Equalizing needs a per-carrier weight of about *W*/*N* off a forty-step geometric ladder, or D62's quota kept as the ceiling, or a real group scheduler in the host — which is a scheduler project and out of scope. **For this reason the fairness argument belongs in each host chapter, not in Design.**
+- **A tenant's thread count stops buying machine share.** The currency changes from tenant-chosen (how many threads it runs) to operator-chosen (how many virtual CPUs it was given). That is the gain, and it is real. It is *not* proportional share: the Linux argument's second step is "**the control group** bounds the N tasks", and Asterinas has no group scheduler — *checked on the tree*: `kernel/core/src/sched/sched_class/fair.rs` carries a per-*thread* weight of 1024·1.25<sup>−nice</sup> and there is no group entity anywhere under `kernel/core/src/sched/`. A sandbox's share is the sum over its host threads, so two sandboxes at the same `nice` with *N* = 2 and *M* = 8 get one share against four.
+
+  **Decided (§8.3): a group scheduler in the host is a named Asterinas prerequisite**, recorded beside the OSTD ones (D118, D122), and until it exists the Asterinas chapter states plainly that **proportional share is not held on this host**. The alternatives — a per-carrier weight of about *W*/*N* off the forty-step geometric ladder, or leaning on D62's quota as the equalizer — are recorded as what a first version could do, not as the design. **The fairness argument therefore stays in each host chapter, not in Design**, because it has no Asterinas leg to stand on until the prerequisite is met.
 - **The tenant's kernel schedules the tenant's threads**: real-time policies, `nice` within the sandbox, `/proc/loadavg` and `sched_getscheduler` become true instead of inert.
 - **A sandbox stops costing the host two task objects and a 512 KiB stack per tenant thread.** A thousand tenant threads cost *N* carriers and a thousand kernelet stacks from the sandbox's own accounted pool.
 - **A task switch stops crossing**: ~1,000 cycles, *measured on the booted prototype of the Linux design*, **[unverified]** on Asterinas.
@@ -274,18 +276,19 @@ So: the *risk* drops on one path and the *count of unverified claims goes up*, n
 - **The host loses its view inside a sandbox** (§2.2): no load balancing within the sandbox's CPU set, no per-thread charging, no host-side visibility of what a tenant runs. `times(2)` becomes the kernelet's own business, as on a machine.
 - **The kernel proper's scheduler becomes load-bearing** without evidence that it is good (§2.2, A33).
 - **Neighbor latency.** The Linux chapter calls the cooperation contract "the one thing this design costs a host that a container does not": about 2 ms on every processor a sandbox may touch, and "a real-time Linux should not host kernelets at all". The Asterinas equivalent must be stated the same way — and note that Asterinas's present bound **kills** the kernelet where Linux's forces a yield (§4.6(4)).
+- **A prerequisite the host does not meet**: proportional share needs a group scheduler Asterinas has not got (§4.4, §8.3), so the back-port leaves that property unheld on this host and says so.
 - **Three mechanisms Asterinas must gain that it does not have today**: the two-stack rule with its reserve and function-entry check (§4.1.2), a per-carrier schedule hook for tenant state and the page-table root (§4.1.3), and the second record field with the four `arch::irq` primitives behind it (§4.2). The first draft of this plan said the back-port adds nothing; it adds these.
 - **Dead code left behind, to be swept in the same pass**: D56's hand-off of a dead kernelet task's reference to the reaper in `after_switching_to` has nothing to hand off, and *Exited*'s definition ("no stack of the kernelet is in use anywhere") must be restated as "no carrier is in kernelet text".
 - Every back-ported claim rests on evidence from the other host until §5 is done.
 
-### 4.6 What the back-port leaves open
+### 4.6 What the prototype must settle
 
-1. **Does Asterinas need the FPU *services* at all?** The per-carrier save of §4.1.3 is the host's; whether the *kernelet* also needs `fpu_save`/`fpu_load` to move state between its own tenant threads depends on where the kernel proper's own save sits, and the Linux prototype's unexplained deviation about that must be understood first.
-2. **What enforces the quota once `task_park`/`task_unpark` are deleted?** D62's throttle is implemented through them: every task parks at its next quiescent point on a per-kernelet throttle queue. With carriers there are no per-task parks, so the ceiling needs a new mechanism (park the carriers, or refuse to schedule them) — and since D62 is also the only answer to proportional share (§4.4), this is load-bearing, not housekeeping.
-3. **Where do the idle tick and the grant notice go?** *Answered, and it is not "nowhere"*: `JOB_TICK` at `idle_tick_hz` and `JOB_GRANT` are worker jobs, and the workers are deleted. The idle tick becomes `vcpu_idle`'s deadline (D122, now a prerequisite); the grant notice becomes a bit in the virtual CPU's record, as on Linux, where the kernelet reads the grant table's published length. Confirm nothing else depends on a per-virtual-CPU thread existing.
-4. **Does the bound kill or yield?** Asterinas's today kills (`preempt_off_ticks` → `PreemptOffTooLong`); Linux's forces a yield and counts it. Choose one for the common chapter, and state that the bound is counted by the host, not read from the kernelet's record.
+Four questions this plan does not answer. **Decided (§8.5): the prototype settles them**, because it has to make each choice to boot at all, and reports each as a finding the way the Linux prototype's phase-4 deviations were reported. They are listed here so that the prototype's remit is explicit and none is decided by accident.
 
----
+1. **Does Asterinas need the FPU *services*?** The per-carrier save of §4.1.3 is the host's, and it is required. Whether the *kernelet* also needs `fpu_save`/`fpu_load` to move state between its own tenant threads depends on where the kernel proper's own save sits — and the Linux prototype's unexplained deviation about exactly that must be understood before either host's text is settled.
+2. **What enforces the quota once `task_park`/`task_unpark` are deleted?** D62's throttle parks each *task* at its next quiescent point, and there are no per-task parks after the back-port. Candidates: park the carriers, or refuse to schedule them. This one is load-bearing twice over, because D62 is also the interim answer to share (§4.4) until the group scheduler of §8.3 exists.
+3. **Where do the idle tick and the grant notice go?** Both are worker jobs (`JOB_TICK` at `idle_tick_hz`, `JOB_GRANT`), and the workers are deleted. The expected answers are `vcpu_idle`'s deadline (D122, a prerequisite rather than an extension) and a bit in the virtual CPU's record; the prototype confirms or refutes them.
+4. **Does the bound kill or yield?** Asterinas's today kills (`preempt_off_ticks` → `PreemptOffTooLong`); Linux's forces a yield and counts it. Whichever the prototype implements, the bound must be counted by the host and not read from the kernelet's record.
 
 ## 5. Evidence: what an Asterinas prototype must show
 
@@ -293,7 +296,9 @@ The back-port's claims would otherwise rest on a prototype of the *other* host. 
 
 A prototype in the Asterinas tree (`~/Workspace/asterinas`), in the spirit of the Linux one: a minimal endovisor, a minimal vOSTD, and the tree's own 100-line example kernel unchanged.
 
-**The gate.** Items 1–3 are also §7's soundness checks. Running them *first* discharges both, and **until they pass, the back-ported mechanisms are a proposal in the text, not a design**: every claim carries **[unverified]** and every number names the host it was measured on.
+**The gate, and it is now the first work of the project.** *Decided (§8.4)*: items 1–3 run **before pass 2 writes a word** of the back-port. They are also §7's soundness checks, so one run discharges the design risk and the evidence gap together. The prototype additionally settles the four mechanism questions of §4.6 and reports each as a finding.
+
+What this buys, and what it costs: the back-ported pages can then state their mechanisms as design rather than as a proposal, and no chapter carries a large **[unverified]** surface for months — at the price of beginning the project with code rather than prose.
 
 1. **Hello World on the real path.** The 100-line kernel, source byte-identical, as a kernelet on an Asterinas host: one carrier, the entry table, the service table, a tenant address space, `user_run`, two system calls.
 2. **A virtual CPU that is a carrier.** *N* = 2 carriers; the kernel proper's injected scheduler running its own tasks on them; a trace checked against a reference model, as the Linux phase-4 test does.
@@ -301,7 +306,7 @@ A prototype in the Asterinas tree (`~/Workspace/asterinas`), in the spirit of th
 
 Then:
 
-4. **Share by carrier count.** Two sandboxes on the same host CPUs, one running 1 busy kernelet task and the other 50, with equal configuration. Assertion: neither sandbox's share moves with its task count. (Today's design fails this by construction. Note that the Linux prototype measured a sandbox against a *sibling control group*, never two sandboxes, so this experiment is new work, not a port.)
+4. **Share by carrier count — and the evidence for the prerequisite.** Two experiments, reported together. (a) Two sandboxes on the same host CPUs with equal configuration, one running 1 busy kernelet task and the other 50: neither share may move with its task count. Today's design fails this by construction, and it is the experiment that justifies the back-port. (b) The same two sandboxes with *N* = 2 against *M* = 8 carriers: the share is expected to come out near 1:4, and that result is the **evidence for the group-scheduler prerequisite of §8.3** — it is what "proportional share is not held on this host" looks like when measured. Note that the Linux prototype measured a sandbox against a *sibling control group* and never ran two sandboxes, so both halves are new work.
 5. **Cooperation and its bound.** A kernelet holding a spin lock across the host's preemption point: zero involuntary switches inside a critical section, and a bounded stay for a deliberate overstayer — with the kill-or-yield decision of §4.5 exercised.
 6. **What was deleted is really gone.** A sandbox with 50 tenant threads must cost *N* carriers plus its device threads, not 50-something, and no 512 KiB host stack per tenant thread.
 7. **Terminating a carrier that spins in kernelet text.** The kill half of D16 disappears with the task-switch half; the exit stub of §4.1.1 replaces it, and nothing has shown that it works on Asterinas.
@@ -321,13 +326,14 @@ Revised after review: the original pass order would have failed `make check` at 
 
 | # | pass | what it does | why here |
 |---|---|---|---|
-| **0** | **The Overview and the terminology** | The two Overview sentences of §0 that the back-port makes false (the `Schedulers` table row, the worker-task clause in C4) and the one whose contrast collapses (`goals.md`). Reconcile `overview/terminology.md` at the same time: it still defines "endovisor ABI" as the image's table (the standing note in `design/principles.md` has flagged this for a while) and has no *carrier* or *virtual CPU*. **The Paper is deferred by decision** (§0); nothing in this pass touches `src/paper/`. | The Overview is in the Blueprint and in scope, and after pass 1+2 two of its sentences are simply wrong. Small enough to fold into pass 1+2's branch if preferred. |
-| **1+2** | **Back-port, as one branch** | Rewrite `virtualizing-ostd/tasks.md` (splitting it into *Tasks and virtual CPUs* + *Scheduling*), `interrupts-and-time.md`, the processor group of `kernelet-api-service.md`, the `spawn_task` hook and task-name space in `kernelet-api-control.md`, the entry rule and I6/I7 in `principles.md`, `faults-and-reclamation.md`, `the-rest.md`, and `index.md` including its figure. Revise D7, D8, D9, D11, D15, D16, D17, D31, D32, D61, D62, D66, D67; replace A8 and A9; add the Asterinas side of D116–D122 and the three new assumptions. | These pages quote each other's model. Split across two commits, the chapter states two incompatible things in between — `make check` tests links, not sense. **Run §7's tree checks before writing.** |
-| **3** | **Create Design, page by page** | For each page in §3.3: create it, move the text, repoint **every** inbound link in the same commit (the register's 167 included), update `SUMMARY.md`, run `make renumber`, check. Rename `design/` → `asterinas-mode/` first, as one mechanical commit. Add the three missing `index.md` files. | Moving one page at a time keeps every commit green, which the all-at-once order could not. |
-| **4** | **Trim the host chapters** | Delete from both host chapters what Design now holds; add each chapter's *What this chapter assumes* page; edit `linux-mode/index.md`'s "written to be read alone" and `AGENTS.md`'s reading rule **in this commit**, as `AGENTS.md` requires of a reversed decision. | The chapters must stop restating the common core, or it will drift again. |
-| **5** | **Figures** | Redraw the architecture figure (it says "a kernelet's threads are host threads", "entry table: start a thread", "service table: 21 C-ABI calls" — all three die in pass 1), the Executive Summary's two, and the seven Linux figures that sit on split pages. `make render` each and look at it. | Figures cannot be moved mechanically and none of the other passes owns them. |
-| **6** | **Register and conventions** | Finish the scope column (Appendix B); `AGENTS.md`'s structure and vocabulary sections; the index child lists, which are hand-written and unchecked. | What is left after pass 3 did the link work. |
-| **7** | **The Asterinas prototype** | §5, in the Asterinas tree, on its own branch; then fold its numbers and deviations back in, as the Linux prototype's were. Items 1–3 are the gate of §5 and should run *before* pass 1 if the schedule allows. | A separate run. |
+| **1** | **The Asterinas prototype, experiments 1–3** | A minimal endovisor, a minimal vOSTD and the tree's own 100-line kernel, in a worktree of `~/Workspace/asterinas`: Hello World on the real path, two carriers running the kernel proper's own scheduler, and the trap-return redirect with a bit-identical checksum. Settle §4.6's four questions in code and report each as a finding. Run §7's soundness list against the tree first; if one fails, revise the plan rather than force it. | *Decided (§8.4)*: this gates the prose. It is also the only way §4.1.1's redirect gets exercised at all, since neither host has run it. |
+| **2** | **The back-port, as one branch** | Rewrite `virtualizing-ostd/tasks.md` (splitting it into *Tasks and virtual CPUs* + *Scheduling*), `interrupts-and-time.md`, the processor group of `kernelet-api-service.md`, the `spawn_task` hook and task-name space in `kernelet-api-control.md`, the entry rule and I6/I7 in `principles.md`, `faults-and-reclamation.md`, `the-rest.md`, and `index.md` including its figure. Fold in pass 1's findings and the group-scheduler prerequisite of §8.3. Revise D7, D8, D9, D11, D15, D16, D17, D31, D32, D61, D62, D66, D67; keep A8 and A9 in their new forms; add the Asterinas side of D116–D122 and the four new assumptions. Sweep the dead code of §4.5. | These pages quote each other's model; split across two commits the chapter states two incompatible things in between, and `make check` tests links, not sense. |
+| **3** | **The Overview and the terminology** | The three Overview sentences of §0 and the reconciliation of `overview/terminology.md` (it still defines "endovisor ABI" as the image's table, and has no *carrier* or *virtual CPU*). Nothing under `src/paper/`. | Small; may be folded into pass 2's branch. The Paper stays a recorded debt (§0). |
+| **4** | **Create Design, page by page** | For each page in §3.3: create it, move the text, repoint **every** inbound link in the same commit (the register's 167 included), update `SUMMARY.md`, run `make renumber`, check. Rename `design/` → `asterinas-mode/` first, as one mechanical commit. Add the three missing `index.md` files. | Moving one page at a time keeps every commit green, which the all-at-once order could not. |
+| **5** | **Trim the host chapters** | Delete from both host chapters what Design now holds; add each chapter's *What this chapter assumes* page; edit `linux-mode/index.md`'s "written to be read alone" and `AGENTS.md`'s reading rule **in this commit**, as `AGENTS.md` requires of a reversed decision. | *Decided (§8.6)*: extraction as planned, so the promise is retired deliberately rather than by drift. |
+| **6** | **Figures** | Redraw the architecture figure (it says "a kernelet's threads are host threads", "entry table: start a thread", "service table: 21 C-ABI calls" — all three die in pass 2), the Executive Summary's two, and the seven Linux figures that sit on split pages. `make render` each and look at it. | Figures cannot be moved mechanically and no other pass owns them. |
+| **7** | **Register and conventions** | Finish the scope column (Appendix B); `AGENTS.md`'s structure and vocabulary sections; the index child lists, which are hand-written and unchecked. | What is left after pass 4 did the link work. |
+| **8** | **The rest of the prototype** | Experiments 4–10 of §5, including the share pair that is the evidence for §8.3's prerequisite; fold the numbers and deviations back into Design and Design for Asterinas, as the Linux prototype's were. | Not a gate, so it follows the prose rather than blocking it. |
 
 **Exit criteria, every pass**: `make renumber` when `SUMMARY.md` or a heading changed; `make check` prints `check: OK`; `make build` exits 0; every changed figure rendered and looked at; external links verified by hand against the local v6.12 tree or the Asterinas tree at `ab9a4cfdc` (no target does this — `make check` skips `http(s)` entirely); no stale vocabulary; the commit message says what changed, what was verified with the actual output, and what the next pass should attack.
 
@@ -355,7 +361,7 @@ Revised after review: the original pass order would have failed `make check` at 
 | page | words | → | notes |
 |---|---:|---|---|
 | `index.md` | 1,092 | split | the figure (redrawn, pass 5) and the four questions → **D**; Asterinas framing → **A** |
-| `principles.md` | 2,754 | split | parties, interfaces, crossing, threat model, invariant claims, comparative prose → **D**; each invariant's Asterinas body → **A**; the standing note on Terminology → resolved in pass 0, not carried |
+| `principles.md` | 2,754 | split | parties, interfaces, crossing, threat model, invariant claims, comparative prose → **D**; each invariant's Asterinas body → **A**; the standing note on Terminology → resolved in pass 3, not carried |
 | `builds-and-images.md` | 3,816 | split | two builds, the image, the audit, the entry point and tables → **D**; the window (`KW_*`), embedding and registration in a boot image → **A** |
 | `kernelet-api-control.md` | 5,384 | split | the life-cycle state machine and the configuration fields → **D** *as new prose* (§A.4d); the Rust hook API, the hook stack, `guest_memory` → **A**; `spawn_task` → **—** |
 | `kernelet-api-service.md` | 5,343 | split | see §A.4a and §A.4b — less moves than it looks |
@@ -404,16 +410,16 @@ Revised after review: the original pass order would have failed `make check` at 
 | file | → | notes |
 |---|---|---|
 | `src/paper/introduction.md`, `src/paper/api-virtualization.md` | **deferred** | four sentences and Table 1; a recorded debt (§0), not this series |
-| `src/blueprint/overview/api-virtualization.md` | edit | pass 0: the `Schedulers` table row, which becomes false |
-| `src/blueprint/overview/challenges.md` | edit | pass 0: C4's worker-task clause, which becomes false |
-| `src/blueprint/overview/goals.md` | edit | pass 0: one clause, where the second-scheduler contrast collapses |
-| `src/blueprint/overview/terminology.md` | edit | pass 0: "endovisor ABI"; add *carrier*, *virtual CPU*; its forward pointer to "the API Virtualization chapter" is a page, not a chapter |
+| `src/blueprint/overview/api-virtualization.md` | edit | pass 3: the `Schedulers` table row, which becomes false |
+| `src/blueprint/overview/challenges.md` | edit | pass 3: C4's worker-task clause, which becomes false |
+| `src/blueprint/overview/goals.md` | edit | pass 3: one clause, where the second-scheduler contrast collapses |
+| `src/blueprint/overview/terminology.md` | edit | pass 3: "endovisor ABI"; add *carrier*, *virtual CPU*; its forward pointer to "the API Virtualization chapter" is a page, not a chapter |
 | `src/blueprint/index.md` | edit | three chapters; and "Nothing in it has run" is already false — the Linux prototype has |
 | `src/SUMMARY.md` | edit | the new chapter and the renamed directory; then `make renumber` |
-| `src/notes/design-register.md` | edit | in pass 3 for links, pass 6 for the scope column |
+| `src/notes/design-register.md` | edit | in pass 4 for links, pass 7 for the scope column |
 | `src/notes/ostd-api-inventory.md`, `io-microbenchmarks.md` | edit | 3 links |
-| `src/executive-summary.md` | edit | 1 link, and two figures in pass 5 |
-| `AGENTS.md` | edit | pass 4 (reading rule) and pass 6 (structure, vocabulary) |
+| `src/executive-summary.md` | edit | 1 link, and two figures in pass 6 |
+| `AGENTS.md` | edit | pass 5 (reading rule) and pass 7 (structure, vocabulary) |
 
 ### A.4 The four splits that are rewrites, not moves
 
@@ -443,7 +449,8 @@ One table, with a new **scope** column: *common*, *Asterinas*, *Linux*.
 | D31 | `nice` and affinity builders | **retired** |
 | D32 | per-virtual-CPU RCU with a host-set extended quiescent state | **retired** with A9; replaced by an in-kernelet rule that must be checked against OSTD's monitor |
 | D61 | a kernelet's tasks are host threads | **retired**; D116 replaces it |
-| D62 | the CPU quota is an OSTD throttle; the weight is a per-thread `nice` | **Asterinas**, kept as the *bound*, with a new mechanism (§4.6(2)); it is also, until a group scheduler exists, the only answer to proportional share |
+| D62 | the CPU quota is an OSTD throttle; the weight is a per-thread `nice` | **Asterinas**, kept as the *bound*, with a new mechanism the prototype chooses (§4.6(2)); it is the interim answer to share until the prerequisite below is met |
+| new | **a group scheduler in the Asterinas host** | a named **Asterinas prerequisite** (§8.3), beside the OSTD ones. Until it exists, the Asterinas chapter states that proportional share is not held on this host, and §5's experiment 4(b) measures how far off it is |
 | D66 | the busy tick is counted into a shared record and consumed at a tick point | **Asterinas**, halved: no per-processor timer survives; consumption at tick points does not (§4.1) |
 | D67 | no idle threads | **retired** |
 | D88 | seats | already retired on Linux; nothing in the Asterinas text depends on the concept (*checked*: only the register mentions it) — but D85, D88, A25 and D101 all link `linux-mode/…/tasks.md#vcpus`, which moves |
@@ -455,14 +462,20 @@ One table, with a new **scope** column: *common*, *Asterinas*, *Linux*.
 
 ---
 
-## 8. What this plan asks the owner to decide
+## 8. The owner's decisions
 
-1. ~~**The Paper (§0).**~~ **Decided 2026-09-27: the Paper waits.** The Overview's two false sentences are fixed in pass 0; the four Paper sentences are a recorded debt, to be paid before `paper/design.md` and `paper/implementation.md` are written.
-2. **The order.** Back-port first (§2.4), or extract first and write two pages twice.
-3. **Proportional share on Asterinas (§4.4).** Accept that the back-port buys "thread count no longer buys share" and not proportional share, keeping D62 as the bound — or open a group scheduler as a named Asterinas prerequisite.
-4. **The gate on evidence (§5).** This plan says the back-ported mechanisms are a *proposal* in the text until §5's items 1–3 run on Asterinas. Agreeing to that means either running them early or marking a chapter's worth of mechanism **[unverified]** for a while.
-5. **§4.6's three open questions**, or leave them to pass 1 to settle against the tree.
-6. **The fallback structure (§7)**, if `linux-mode/index.md`'s "written to be read alone" is worth more than the deduplication.
+All six questions were put to the owner and answered on 2026-09-27. They are recorded here and folded into the sections they govern.
+
+| # | question | decision |
+|---|---|---|
+| 1 | **The Paper** (§0) | **Waits.** The four Paper sentences are a recorded debt with a trigger; the three Overview sentences, two of which the back-port makes false, are pass 3. |
+| 2 | **The order** (§2.4) | **Back-port first**, then extract. |
+| 3 | **Proportional share on Asterinas** (§4.4) | **Name a group scheduler as a prerequisite.** The property is stated as *not held* on the Asterinas host until one exists, alongside the OSTD prerequisites. |
+| 4 | **The gate on evidence** (§5) | **Run experiments 1–3 first.** No back-ported prose is written until the minimal Asterinas prototype has run them. |
+| 5 | **§4.6's four open mechanisms** | **The prototype settles them**, and reports each as a finding. |
+| 6 | **The structural fallback** (§7) | **Extract as planned.** Design becomes authoritative, the host chapters stop restating it, and `linux-mode/index.md`'s "written to be read alone" is edited away in pass 4. The fallback is not taken. |
+
+Decisions 2 and 4 interact: because the prototype gates the prose, the work now begins with a prototype run rather than with writing, and §6 is ordered that way.
 
 ---
 
