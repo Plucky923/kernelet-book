@@ -2,8 +2,6 @@
 
 This page names the interfaces the rest of the chapter designs, says who trusts whom across each, and states the invariants that every later page must discharge. It answers none of the four questions by itself; it fixes the terms the answers use.
 
-> **Note on names.** The Overview's [Terminology](../overview/terminology.md) page currently uses "endovisor ABI" for the table of function pointers a kernelet image receives at its entry point. This chapter uses that name for the endovisor's *user-space* interface, as the names below say, and calls the pointer tables the *image ABI*. The Terminology page is to be brought in line; the change is not applied here.
-
 ## The parties
 
 Five kinds of code take part, and they are not equally trusted.
