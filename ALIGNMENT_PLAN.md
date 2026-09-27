@@ -520,6 +520,32 @@ Two consequences for the plan. The pass-2 commit is larger than §6 implies, and
 
 ---
 
+## Appendix D: the drift ledger
+
+Work beyond §6's passes, and the owner may reject it. The two extractions each turned up concrete drift that §2's page-by-page comparison had missed, so the remaining eleven page pairs were audited for it systematically: the same knob with two values, the same thing with two names, a rule stated on one host and missing on the other, the same claim at two confidences, and outright contradictions. Thirteen candidates came back. **Every one was re-checked against the source before it was acted on, and one did not survive** — a reminder that an audit is evidence, not a finding.
+
+| # | what | verdict | disposition |
+|---|---|---|---|
+| 1 | The image must not touch the x87, SSE, AVX or AVX-512 registers. The Linux page states the rule **for both hosts** and its audit checks it; the Asterinas audit has no such item | confirmed | **fixed**: Asterinas audit item 11 |
+| 2 | Frame metadata: the Asterinas page's code, mapping step and cost all compute the **flat** index that the page's own D86 retires, and it calls A22 "the live bound" where the register marks A22 superseded by D86 | confirmed, and worse than reported — the same paragraph states D86's cost and then the flat scheme's | **fixed**: five surgical edits |
+| 12 | The 98-percent-shareable measurement is flat on Asterinas and **[unverified]** on Linux, for the same unbuilt image | confirmed | **fixed**: the caveat added |
+| 13 | A default task ceiling (4,096, *chosen*) is stated only on Linux, though both hosts bound it | confirmed; the *address-space* ceiling beside it is correctly host-specific, since each model costs Linux an `mm_struct` | **fixed**: `max_tasks` added to Design's `config.json` table |
+| 3 | `grains_request`'s second argument is a **flag** on Asterinas ("as one contiguous run if set") and a **count** on Linux ("how many must form one run") — one service, one vOSTD source | confirmed | **pass 2**: Linux's count subsumes the flag, so keep the count; the Asterinas call site then passes `grains`, not `1`, which under the count reading asks for nothing |
+| 6 | The service signatures said to be "the same on both hosts" and generated from one Rust module differ in width: `u16`/`u8` against `uint32_t` | confirmed | **pass 2**: no basis to choose; one ABI module fixes them once |
+| 4 | Kernelet task stack: 512 KiB against 256 KiB | confirmed | **pass 2**: the 512 KiB is inherited from "a kernelet's tasks are host threads", which the back-port deletes |
+| 5 | Idle: a 100 Hz default tick (10 ms wake latency) against idling to the kernel proper's next expiry, which Linux makes OSTD prerequisite D122 | confirmed | **pass 2**: §4.7's answer to §4.6(3) settles it — `halt_cpu()` takes no deadline, so D122 is a genuine OSTD addition and cannot be optional on one host |
+| 7 | A per-request byte bound (`max_request_bytes`, 4 MiB block / 64 KiB network) exists only on Asterinas; Linux bounds only the *number* of requests by ring depth | confirmed | **pass 5**: Asterinas is right — ring depth bounds requests, not the bytes a descriptor names, and it is charged work under I6 on both hosts. Adding it to Linux is new design content |
+| 8 | At the memory ceiling Asterinas may consult policy (`ask_before_oom`, `on_grant_exhausted`) and Linux refuses flatly | confirmed | **owner**: no basis to choose; raising a ceiling is endovisor policy on either host |
+| 10 | The vsock operations carry a `VSOCK_` prefix on one host and not the other, and Linux has no half-close and no operation to open a sandbox pair, which common D68 requires | confirmed; the `LISTEN` half is already recorded on Design's runtime page | **pass 2 / pass 5**: prefer one spelling; Linux's table is missing two operations |
+| 11 | Reading the exit status is `KERNELET_STATUS` on one host and `KERNELET_WAIT` on the other | confirmed | **pass 2**: Asterinas's name carries its reasoning — a non-blocking read plus `poll`, which no page justifies calling a wait |
+| 9 | *Claimed*: the Asterinas chapter still has a per-kernelet kernel page table and non-Global window mappings, which D3 retired | **rejected** | The quoted phrase "window mappings are not Global" appears nowhere in the chapter (*checked*), and the CR3 text at `kernelet-api-service.md:299` is consistent with D3. The residue is three doc comments saying "the kernelet's kernel page table", two of which pass 2 deletes; the third is a phrasing nit |
+
+Three near-misses were checked and rejected, and should not be re-investigated: the stack reserve of 64 KiB against 16 KiB (on Linux a service runs on the carrier's own stack, so the kernelet stack needs less headroom); the audit's "no stack frame over 4 KiB" existing only on Linux (it makes the Linux-only function-entry check sound, and §4.7(5) turns that check into the primary mechanism on Asterinas too, so it becomes common in pass 2); and Linux re-zeroing grains at destroy (stated reason, Linux does not clear memory handed to its own allocations).
+
+The vsock credit clamp, 64 KiB against 256 KiB, is not in the table because Design's Channels page already records it.
+
+---
+
 ## 8. The owner's decisions
 
 All six questions were put to the owner and answered on 2026-09-27. They are recorded here and folded into the sections they govern.

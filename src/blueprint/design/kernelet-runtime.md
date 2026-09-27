@@ -43,6 +43,7 @@ The runtime listens before it starts the sandbox and the agent dials out when it
 |---|---|
 | `linux.resources.cpu.cpus` | `num_vcpus` from the cpuset's size when present, otherwise the runtime's configured default, 2 (*chosen*); which processors a sandbox may run on is the host's to arrange |
 | `linux.resources.cpu.shares`, `.quota`, `.period` | the sandbox's processor share and cap, in whichever of the host's own controls carries them. This is the first level of scheduling, and what property it delivers is each host chapter's to state |
+| the bundle's task ceiling | `max_tasks`, or the runtime's default of 4,096 (*chosen*). How many address spaces a sandbox may hold is each host chapter's, because what one costs the host differs |
 | `linux.resources.memory.limit` | `max_grains = limit / 2 MiB` when present; the user's policy cap when absent or `-1`; `initial_grains` is the runtime's policy, by default a quarter of `max_grains` or 16 grains, whichever is larger (*estimated*; to be tuned against the floor the Evaluation chapter measures) |
 | `process` | sent to the agent at `create` and started at `start`: args, env, cwd, user, capabilities, rlimits, terminal |
 | `root.path`, `root.readonly` | the block image below, attached read-only if asked |
