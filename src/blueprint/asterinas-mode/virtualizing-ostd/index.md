@@ -2,7 +2,9 @@
 
 *Answers question 2: how is the API of vOSTD virtualized, item by item?*
 
-This page is the taxonomy. Every public item of OSTD that the kernel proper uses, as enumerated in the [OSTD API inventory](../../../notes/ostd-api-inventory.md), is one of three things in vOSTD, and the tables below say which, how a virtualized item is implemented, which service-half function or shared page it relies on, what it costs, and what a tenant can observe. The six pages that follow hold the mechanisms: [Memory](memory.md), [Tasks, scheduling, and CPUs](tasks.md), [Interrupts and time](interrupts-and-time.md), [User mode](user-mode.md), [Devices](devices.md), and [Boot, power, panic, and the rest](the-rest.md).
+> **Being back-ported.** The tables below still describe the model that [Tasks, virtual CPUs, and carriers](tasks.md) and [Scheduling](scheduling.md) have replaced: eighteen rows name a worker, a job, an inert class scheduler or a host thread per kernelet task. They are corrected in the same pass, from `ALIGNMENT_PLAN.md` Appendix C.
+
+This page is the taxonomy. Every public item of OSTD that the kernel proper uses, as enumerated in the [OSTD API inventory](../../../notes/ostd-api-inventory.md), is one of three things in vOSTD, and the tables below say which, how a virtualized item is implemented, which service-half function or shared page it relies on, what it costs, and what a tenant can observe. The seven pages that follow hold the mechanisms: [Memory](memory.md), [Tasks, virtual CPUs, and carriers](tasks.md), [Scheduling](scheduling.md), [Interrupts and time](interrupts-and-time.md), [User mode](user-mode.md), [Devices](devices.md), and [Boot, power, panic, and the rest](the-rest.md).
 
 ## The three kinds
 
