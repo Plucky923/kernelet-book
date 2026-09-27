@@ -1,32 +1,37 @@
 # Bringing the two host designs into line
 
-*A plan, not a revision. Nothing under `src/` is changed by the commit that adds this file. It answers three questions: how the two design chapters compare today, what shape the Blueprint should take, and in what order to get there. Written 2026-09-22 against `main` at `a2188d0`, then revised once against three independent reviews of the plan itself; §9 lists what the reviews changed.*
+*A plan, not a revision. Nothing under `src/` is changed by the commit that adds this file. It answers three questions: how the two design chapters compare today, what shape the Blueprint should take, and in what order to get there. Written 2026-09-22 against `main` at `a2188d0`, then revised against three independent reviews of the plan itself (§9), and again on 2026-09-27 when the owner decided the Paper question of §0.*
 
 ---
 
-## 0. One thing to decide before anything else
+## 0. The Paper: decided, and recorded as a debt
 
-The task set the blast radius at "the Blueprint and the design register — the Paper, Executive Summary and Notes stay". **That instruction cannot be followed as given, and the conflict is in the book's own rules.**
+**Decision, 2026-09-27: the Paper waits.** The owner was asked and chose to hold the line on scope. This section records what that costs, precisely enough that the debt can be paid later without rediscovering it — and carves out the two sentences that are *not* in the Paper and therefore not deferred.
+
+The reasoning that made this a question in the first place follows.
 
 `AGENTS.md`: *"where a Note disagrees with the Blueprint, the Blueprint wins, and where either disagrees with the Paper, the **Paper** wins."*
 
 The Paper is not merely decorated with the old task model; it is built on it:
 
-| where | what it says |
-|---|---|
-| `paper/introduction.md` | "Its threads are threads of the host kernel, scheduled by the host" |
-| `paper/introduction.md` | machine virtualization is indicted because "a second scheduler runs beneath the guest's" |
-| `paper/api-virtualization.md` | "there is **one scheduler**"; Table 1's row reads `| Schedulers | two | one | one |` |
-| `overview/goals.md` | "A second scheduler runs beneath the guest's, so the guest's decisions about which thread to run are made twice" |
-| `overview/challenges.md` | "every deferred piece of work must run on the kernelet's own **worker task**" |
+| where | what it says | after the back-port | in scope? |
+|---|---|---|---|
+| `paper/introduction.md` | "Its threads are threads of the host kernel, scheduled by the host" | false | **deferred** |
+| `paper/introduction.md` | machine virtualization is indicted because "a second scheduler runs beneath the guest's" | the indictment now also fits a kernelet | **deferred** |
+| `paper/api-virtualization.md` | "there is **one scheduler**", and Table 1's `| Schedulers | two | one | one |` | false | **deferred** |
+| `overview/api-virtualization.md` | the same table row, `| Schedulers | two | one | one |`, third column API virtualization | **false** | **kept** — the Overview is in the Blueprint |
+| `overview/challenges.md` | "every deferred piece of work must run on the kernelet's own **worker task** and be charged to it" | **false**: the worker task is deleted | **kept** |
+| `overview/goals.md` | "A second scheduler runs beneath the guest's, so the guest's decisions about which thread to run are made twice" | still true *of machine virtualization*, but the contrast it draws collapses | **kept**, one clause |
 
-The back-port *installs* a second scheduler, on both hosts, and deletes the worker task. So after pass 2 the Blueprint would say one thing and the Paper, which wins, would say the opposite. The Overview is in the same position, which also falsifies this plan's earlier claim that Overview is untouched.
+The back-port installs a second scheduler on both hosts and deletes the worker task. Two Overview sentences therefore become plainly false, and the Overview is inside the Blueprint and inside the stated scope, so they are fixed in the back-port pass (§6). The four Paper sentences wait.
 
-The cost of fixing it is small, and much smaller than the cost of not fixing it: `paper/design.md` and `paper/implementation.md` are empty stubs today, so there is almost nothing to rewrite, and writing them later against a model the Paper contradicts is the expensive path. What is needed is a decision in writing about what "one scheduler" now claims — most likely *one scheduler of processors, and no hardware exit beneath it*, which is still true and still the argument against machine virtualization — and five sentences edited to match.
+**What the debt is, exactly.** After pass 2 the Blueprint will be internally consistent and say *two schedulers*; the Paper will say *one*; and `AGENTS.md` says that where the two disagree, **the Paper wins**. A reader following the book's own precedence rule will therefore get the wrong answer about the central mechanism until the debt is paid. That is sharper than leaving both out of line, not softer, and it is the price of the decision.
 
-**Recommendation: add pass 0 (§6), five sentences across the Paper and the Overview, before pass 1.** If the owner would rather hold the line on scope, the alternative is to stop after pass 2 and leave the Blueprint knowingly in conflict with the Paper until a later run — which `AGENTS.md` forbids reading the other way round, so it must at least be recorded as a deliberate debt.
+**When it should be paid.** Before `paper/design.md` and `paper/implementation.md` are written. Both are empty stubs today, so the fix is four sentences and a table cell; written against "one scheduler" first, they become a rewrite. That is the trigger to watch, not a date.
 
-The Paper is *already* out of line with the Blueprint in one place, which weakens "out of scope" further: `paper/api-virtualization.md` still describes the Linux host with "per-CPU data is selected by a **seat**" and "every kernelet task is carried for life by a Linux task", both retired by D88 and D116 in the last run.
+**What the fix will be, when it comes**: a decision in writing about what "one scheduler" now claims — most likely *one scheduler of processors, and no hardware exit beneath it*, which stays true after the back-port and is still the argument against machine virtualization — and the four sentences edited to match.
+
+One thing worth knowing while the debt stands: the Paper is *already* out of line with the Blueprint independently of this plan. `paper/api-virtualization.md` still describes the Linux host with "per-CPU data is selected by a **seat**" and "every kernelet task is carried for life by a Linux task", both retired by D88 and D116 in the last run. Whoever pays this debt should sweep those at the same time.
 
 ---
 
@@ -316,7 +321,7 @@ Revised after review: the original pass order would have failed `make check` at 
 
 | # | pass | what it does | why here |
 |---|---|---|---|
-| **0** | **Settle the Paper** | Decide what "one scheduler" claims; edit the five sentences of §0 in the Paper and the Overview. Reconcile `overview/terminology.md` at the same time: it still defines "endovisor ABI" as the image's table (the standing note in `design/principles.md` has flagged this for a while) and has no *carrier* or *virtual CPU*. | Everything after this contradicts the Paper, which by `AGENTS.md` wins. Cheap now, expensive later. |
+| **0** | **The Overview and the terminology** | The two Overview sentences of §0 that the back-port makes false (the `Schedulers` table row, the worker-task clause in C4) and the one whose contrast collapses (`goals.md`). Reconcile `overview/terminology.md` at the same time: it still defines "endovisor ABI" as the image's table (the standing note in `design/principles.md` has flagged this for a while) and has no *carrier* or *virtual CPU*. **The Paper is deferred by decision** (§0); nothing in this pass touches `src/paper/`. | The Overview is in the Blueprint and in scope, and after pass 1+2 two of its sentences are simply wrong. Small enough to fold into pass 1+2's branch if preferred. |
 | **1+2** | **Back-port, as one branch** | Rewrite `virtualizing-ostd/tasks.md` (splitting it into *Tasks and virtual CPUs* + *Scheduling*), `interrupts-and-time.md`, the processor group of `kernelet-api-service.md`, the `spawn_task` hook and task-name space in `kernelet-api-control.md`, the entry rule and I6/I7 in `principles.md`, `faults-and-reclamation.md`, `the-rest.md`, and `index.md` including its figure. Revise D7, D8, D9, D11, D15, D16, D17, D31, D32, D61, D62, D66, D67; replace A8 and A9; add the Asterinas side of D116–D122 and the three new assumptions. | These pages quote each other's model. Split across two commits, the chapter states two incompatible things in between — `make check` tests links, not sense. **Run §7's tree checks before writing.** |
 | **3** | **Create Design, page by page** | For each page in §3.3: create it, move the text, repoint **every** inbound link in the same commit (the register's 167 included), update `SUMMARY.md`, run `make renumber`, check. Rename `design/` → `asterinas-mode/` first, as one mechanical commit. Add the three missing `index.md` files. | Moving one page at a time keeps every commit green, which the all-at-once order could not. |
 | **4** | **Trim the host chapters** | Delete from both host chapters what Design now holds; add each chapter's *What this chapter assumes* page; edit `linux-mode/index.md`'s "written to be read alone" and `AGENTS.md`'s reading rule **in this commit**, as `AGENTS.md` requires of a reversed decision. | The chapters must stop restating the common core, or it will drift again. |
@@ -398,8 +403,10 @@ Revised after review: the original pass order would have failed `make check` at 
 
 | file | → | notes |
 |---|---|---|
-| `src/paper/introduction.md`, `src/paper/api-virtualization.md` | edit | pass 0 (§0), including Table 1 |
-| `src/blueprint/overview/goals.md`, `challenges.md` | edit | pass 0: the second-scheduler sentence, the worker-task sentence |
+| `src/paper/introduction.md`, `src/paper/api-virtualization.md` | **deferred** | four sentences and Table 1; a recorded debt (§0), not this series |
+| `src/blueprint/overview/api-virtualization.md` | edit | pass 0: the `Schedulers` table row, which becomes false |
+| `src/blueprint/overview/challenges.md` | edit | pass 0: C4's worker-task clause, which becomes false |
+| `src/blueprint/overview/goals.md` | edit | pass 0: one clause, where the second-scheduler contrast collapses |
 | `src/blueprint/overview/terminology.md` | edit | pass 0: "endovisor ABI"; add *carrier*, *virtual CPU*; its forward pointer to "the API Virtualization chapter" is a page, not a chapter |
 | `src/blueprint/index.md` | edit | three chapters; and "Nothing in it has run" is already false — the Linux prototype has |
 | `src/SUMMARY.md` | edit | the new chapter and the renamed directory; then `make renumber` |
@@ -450,7 +457,7 @@ One table, with a new **scope** column: *common*, *Asterinas*, *Linux*.
 
 ## 8. What this plan asks the owner to decide
 
-1. **The Paper (§0).** Add pass 0 and edit five sentences, or accept a knowing conflict with the rule that the Paper wins. *Recommendation: pass 0.*
+1. ~~**The Paper (§0).**~~ **Decided 2026-09-27: the Paper waits.** The Overview's two false sentences are fixed in pass 0; the four Paper sentences are a recorded debt, to be paid before `paper/design.md` and `paper/implementation.md` are written.
 2. **The order.** Back-port first (§2.4), or extract first and write two pages twice.
 3. **Proportional share on Asterinas (§4.4).** Accept that the back-port buys "thread count no longer buys share" and not proportional share, keeping D62 as the bound — or open a group scheduler as a named Asterinas prerequisite.
 4. **The gate on evidence (§5).** This plan says the back-ported mechanisms are a *proposal* in the text until §5's items 1–3 run on Asterinas. Agreeing to that means either running them early or marking a chapter's worth of mechanism **[unverified]** for a while.
@@ -463,7 +470,7 @@ One table, with a new **scope** column: *common*, *Asterinas*, *Linux*.
 
 Three independent reviews read the first draft: one on the design content, one on executability against the book's tooling, one on the premises. All three are folded in. Between them they reported thirteen blocking issues, and seven of those changed a conclusion rather than a wording:
 
-- **The Paper is not out of scope** (§0). It overrides the task's stated blast radius, because `AGENTS.md` says the Paper wins.
+- **The Paper conflict** (§0), which the reviews surfaced and the owner then decided: the Paper waits, the two false Overview sentences do not, and the debt is recorded with its trigger.
 - **"Fairness becomes a property of the design" was wrong** (§4.4): the Linux argument's load-bearing step is the control group, which Asterinas does not have. Two sandboxes at one `nice` with different carrier counts do not get equal share.
 - **The unverified assumptions do not go down, they go up** (§4.3). A8 stays for the yield stub; A9 changes hands but survives in substance; the stack-push redirect is unexercised on *both* hosts, because the Linux prototype kept the interrupted pointer in the record.
 - **The redirect as written could not be implemented** (§4.1.1): on a kernel-mode trap with no interrupt-stack table, the words just below the interrupted stack pointer are the `SS` and `RSP` the `iretq` pops.
