@@ -31,3 +31,4 @@ The design is organized by these needs.
 ## In this chapter
 
 - [Channels](channels.md): vsock through a switch, addressing, credit, and what crosses between sandboxes.
+- [The kernelet runtime](kernelet-runtime.md): the OCI verbs, the agent inside a sandbox, and what a bundle becomes.

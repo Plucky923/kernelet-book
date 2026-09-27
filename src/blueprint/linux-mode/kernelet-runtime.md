@@ -1,18 +1,8 @@
 # The kernelet runtime
 
-*The program an operator actually runs: a container runtime that gives each container a kernelet. It is ordinary host user space, trusted as a container runtime is trusted, and everything it does to a sandbox it does through the endovisor's device and Linux's own tools.*
+*What Linux adds to the common [kernelet runtime](../design/kernelet-runtime.md) design: what it must check about the host before it will create a sandbox, the control group and credentials it prepares, and the process it hands to the endovisor's program loader.*
 
-## What it is
-
-The **kernelet runtime** implements the Open Container Initiative's runtime interface, the five verbs `create`, `start`, `kill`, `delete` and `state` over a *bundle* (a directory with a `config.json` and a root file system). That is the interface `runc` implements, so containerd, Podman or Kubernetes can use kernelets by naming a different runtime, with nothing else changed. Its model is the one Kata Containers uses for virtual machines: the sandbox boots at `create`, and the container's process is something an agent inside the sandbox starts later.
-
-No tenant sees the runtime or trusts it. The host trusts it to configure sandboxes correctly, as it trusts `runc`.
-
-## What runs inside a sandbox
-
-The kernel proper, with a command line the runtime composes: the list of virtio devices, the root device, and `init=/sbin/kernelet-agent`. The **agent** is a small static program that the runtime places in the root file system. As the sandbox's first process it mounts what `config.json` asks for, sets the hostname, configures the network interface, and then takes orders from the runtime over a [vsock connection](channels.md): start the container's process with this environment and these limits, start another (`exec`), deliver a signal, report an exit status, carry the standard streams. It is small because a real kernel is doing the rest.
-
-The root file system reaches the sandbox as a disk image. The runtime builds an ext2 image from the bundle's root directory, caches it by content, and attaches it as a read-only virtio disk under a writable overlay.
+The OCI verbs, the agent inside, the holder process, the hooks, the `config.json` mapping, the root file system image and what a tenant sees are in [The kernelet runtime](../design/kernelet-runtime.md) and are not repeated. This page is the part that is Linux's: the host administration the runtime does beside the ABI calls, all of it with Linux's own tools.
 
 ## `create`, step by step
 
@@ -41,14 +31,11 @@ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 
 Every ordinary system call of a carrier passes this filter with *allow* and then meets the [gate](virtualizing-ostd/user-mode.md), which hands it to the kernelet. **[unverified]**: the filter is written from the documented layout of seccomp's input and has not been run.
 
-## The other verbs
+## What the other verbs add here
 
-- **`start`** tells the agent to start the container's process.
-- **`kill <signal>`** asks the agent to deliver the signal inside. If the agent does not answer in time, the runtime kills the *sandbox* with `KERNELET_KILL`.
 - **`delete`** destroys the sandbox (`KERNELET_KILL` if it is still running, a wait for it to exit, then `KERNELET_DESTROY`), ends the holder, and removes the control group and the state directory.
-- **`state`** reports the container's status from the kernelet's state and the agent's report. The process identifier it reports is the holder's, because the container's process has no identifier the host could use: on the host it is not a Linux process at all, and inside the sandbox it has a process identifier only the kernelet knows.
 
-One policy belongs to the runtime because only it can enforce it: **creation is rate-limited per tenant.** Creating an instance changes page permissions, which flushes the TLB of every processor on the machine ([Builds and images](builds-and-images.md)), so a tenant that could make its sandbox restart in a tight loop could tax every other workload. The runtime spaces restarts out, and refuses them beyond a budget.
+One policy belongs to the runtime because only it can enforce it, and it is a policy this host needs and the other does not: **creation is rate-limited per tenant.** Creating an instance changes page permissions, which flushes the TLB of every processor on the machine ([Builds and images](builds-and-images.md)), so a tenant that could make its sandbox restart in a tight loop could tax every other workload. The runtime spaces restarts out, and refuses them beyond a budget. With Asterinas as the host, one physical copy of a kind's text is mapped into each instance's own range and no permission on a mapped frame changes, so nothing machine-wide happens at creation.
 
 ## What the operator sees on the host
 
@@ -60,6 +47,7 @@ The first version gives a sandbox a TAP interface, which the runtime creates and
 
 ## What this page decides
 
-- **The runtime is an OCI runtime with a guest agent, booting the sandbox at `create`** (register D43 and D54, kept).
 - **The runtime prepares a process and lets it execute the sandbox file** (the runtime's side of register D105, which the [endovisor page](endovisor.md#abi) decides): control group, credentials, namespaces and seccomp filter are set with Linux's own tools and inherited by every carrier.
 - **The network backend is a TAP interface** (register D110), replacing the other host's user-space translator.
+- **Creation is rate-limited per tenant**, because on this host creating an instance is a machine-wide event.
+- The common decisions D43, D54 and D44 are on the [kernelet runtime](../design/kernelet-runtime.md) page.
