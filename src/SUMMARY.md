@@ -22,6 +22,8 @@
   - [API virtualization, in one page](blueprint/overview/api-virtualization.md)
   - [Terminology](blueprint/overview/terminology.md)
   - [Why it is hard](blueprint/overview/challenges.md)
+- [Design](blueprint/design/index.md)
+  - [Channels](blueprint/design/channels.md)
 - [Design for Asterinas](blueprint/asterinas-mode/index.md)
   - [Boundaries and trust](blueprint/asterinas-mode/principles.md)
   - [Builds and images](blueprint/asterinas-mode/builds-and-images.md)
