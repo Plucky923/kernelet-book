@@ -195,23 +195,43 @@ After: **a carrier is a host kernel thread that carries one virtual CPU** of a k
 
 | the contract | how Asterinas meets it |
 |---|---|
-| a carrier per virtual CPU | a host kernel thread, pinned to the virtual CPU's host CPU, created by the endovisor at `start` |
+| a carrier per virtual CPU | a host kernel thread created by the endovisor at `start`. **Not pinned** to one host CPU unless the operator asks: the first draft pinned each carrier, which stops the host balancing them and makes a sandbox's share per-CPU; Linux deliberately does not pin |
 | a way into the image | `_kernelet_entry` on virtual CPU 0, the entry table's `vcpu_entry` on the others |
-| an upcall to a virtual CPU running kernelet code | the host's **trap-return path**, which it already owns. *Checked on the tree at `ab9a4cfdc`*: the kernel-mode entry stub saves every general register and the `iretq` frame on the interrupted stack and calls `trap_handler(f: &mut TrapFrame)` (`ostd/src/arch/x86/trap/trap.S`, `ostd/src/arch/x86/trap/mod.rs:151`), whose `f.rip` and `f.rsp` the `iretq` restores — so the redirect is two stores in Rust the host already runs, with no timer callback and no `get_irq_regs()` equivalent, which is what Linux needs |
-| virtual interrupts | bits in the per-virtual-CPU record, which that record already is; the host sets, the kernelet takes |
-| the tick | the host tick still adds to the virtual CPU's `tick_pending` and **no timer is armed per processor** — that much of D66 survives. What does *not* survive is "consumed at the kernelet's next tick point": once the kernelet's own scheduler ends time slices, a compute-bound task reaches no tick point, so the tick must be delivered as an upcall like any other virtual interrupt |
-| idling a virtual CPU | `vcpu_idle`: the carrier parks; the host wakes it when a bit is set |
+| **three** redirect targets from the trap-return path | see §4.1.1 — the upcall stub, a yield stub and an exit stub. The first draft had only the upcall, which replaces one of the three jobs D16 does today |
+| virtual interrupts | bits in a per-virtual-CPU record. (There are two record kinds today: a per-task one carrying the preemption count and flags, and a per-virtual-CPU one carrying `tick_pending` and `quiescent`. The first is deleted; the second is extended) |
+| the tick | the host tick still adds to the virtual CPU's `tick_pending` and **no timer is armed per processor** — that much of D66 survives. What does *not* survive is "consumed at the kernelet's next tick point": once the kernelet's own scheduler ends time slices, a compute-bound task reaches no tick point, so the tick must be delivered as an upcall. The *idle* half of D66 (`JOB_TICK` at `idle_tick_hz` on a worker) and `JOB_GRANT` also die with the workers, and need somewhere to go — §4.6(3) |
+| idling a virtual CPU | `vcpu_idle(deadline)`: the carrier parks; the host wakes it when a bit is set or the deadline passes. The deadline is not optional here: with the workers gone, an all-idle kernelet's timer wheel would otherwise stop. D122's next-expiry hook is a prerequisite, not an extension |
 | kicking another virtual CPU | `vcpu_kick`: set the bit, wake the carrier, or send a reschedule interrupt so that its trap-return path delivers the upcall |
-| kernelet stacks | `kstack_alloc` / `kstack_free` over the host's allocator, from a per-sandbox pool, charged to the kernelet |
-| a tenant thread's floating-point state | open, §4.6(1) |
+| kernelet stacks | `kstack_alloc` / `kstack_free` over the host's allocator, from a per-sandbox pool, charged to the kernelet — with the prerequisites of §4.1.2, which are heavier on Asterinas than on Linux |
+| a tenant thread's floating-point state, and the kernelet's page table, across a host preemption | **D17 is kept, not retired** — §4.1.3 |
 
-### 4.2 Three things simpler than on Linux
+#### 4.1.1 The redirect: three targets, and how it is actually written
 
-1. **No mirrored preemption count.** On Linux, vOSTD raises Linux's own per-processor count. On Asterinas the host already reads the kernelet's guard count out of a shared record at its preemption point (D16 does this today). The count moves from the task record to the virtual CPU's record, and the host's rule becomes: *do not preempt a carrier whose virtual CPU is in a critical section; at the bound, redirect it through the yield stub.* No mirror, no un-mirroring around service calls, no risk of leaving the host's count wrong.
-2. **No watch timer and no preemption notifiers.** The host's own tick already fires on every processor and already knows which kernelet task it interrupted, which is where `policy.preempt_off_ticks` is enforced today.
-3. **No address-space adoption.** A carrier runs the kernelet's own page table and `pt_activate` writes CR3. `kernelet_switch_mm()`, the per-model Linux address space and its reference counting have no counterpart.
+D16 does three things today: it delivers preemption to the kernelet, it gives the host CPU to another host task, and it terminates a task of a dying kernelet. **The upcall replaces only the first.** Asterinas therefore needs the same three stubs the Linux design has: `virq_entry` for virtual interrupts, a **yield stub** that reaches the host's own voluntary switch in task context at depth 0, and an **exit stub** for termination. Without the yield stub the host can never take a processor back from a carrier that computes, and D62's throttle loses its mechanism as well (it parks each *task* in its service epilogue today, and there are no per-task parks after the back-port).
 
-What Asterinas must add that Linux did not: nothing. The upcall redirect is the trap-return hook it already has, reduced from "run OSTD's switch protocol" to "rewrite two fields of a trap frame".
+The mechanism is not the two stores the first draft claimed. *Checked on the tree at `ab9a4cfdc`*: the kernel-mode path `_trap_from_kernel` saves every general register and returns with `iretq` (`ostd/src/arch/x86/trap/trap.S`), and `trap_handler(f: &mut TrapFrame)` (`ostd/src/arch/x86/trap/mod.rs:151`) can rewrite `f.rip` and `f.rsp`. But on a kernel-mode trap the processor pushes its five-word frame immediately below the interrupted stack pointer and switches no stack — *checked*: no interrupt-stack-table index is ever set in `ostd/src/arch/x86/trap/idt.rs`, and `trap/gdt.rs` installs a bare `TaskStateSegment::new()`. So the words just below the interrupted stack pointer are the `SS` and `RSP` that the `iretq` must still pop, and "pushing the saved instruction pointer there" corrupts the return. It has to be written *below* the hardware frame, with the frame's saved `rsp` pointed at it — about a 48-byte hole, plus the stub's own realignment.
+
+And the Linux prototype does not discharge this. Its phase-4 report records the deviation: "It keeps the interrupted instruction pointer in the record rather than on the interrupted stack." So the variant this plan back-ports is unexercised on **both** hosts, and §4.3 says so.
+
+#### 4.1.2 Kernelet stacks need their prerequisites, and they are heavier here
+
+With no interrupt-stack table (above), every host trap — the tick, a page fault, a double fault — runs to completion on whatever stack it interrupted, which after the back-port is a kernelet stack. Linux moves hard interrupts to a per-processor interrupt stack and *still* reserves 16 KiB. The back-port therefore needs the Asterinas counterparts of the Linux chapter's D84/D112 (kernelet code on the task's stack, host code on the carrier's), the reserve, the function-entry stack check, and the `gs:`/TSS handling that user entry uses. None of that is in the Asterinas chapter today, and one sentence there is already false of the tree: `faults-and-reclamation.md` says the double-fault handler "runs on its interrupt stack", which the bare TSS contradicts.
+
+#### 4.1.3 D17 is kept, and it is the counterpart of address-space adoption
+
+A carrier is a host **kernel** thread, and *checked on the tree*: both of the host's schedule handlers return early for a task with no thread-local state — `pre_schedule_handler` saves the FPU and the FS/GS bases only through `as_thread_local()`, and `post_schedule_handler` activates a `vm_space` only if a `vmar` exists (`kernel/core/src/thread/mod.rs`). On Linux the carrier is a *user* task, so Linux itself saves the floating-point state and switches the address space. On Asterinas nobody would: after a host preemption of a carrier the kernelet would resume with whatever page-table root the intervening host thread left, and a tenant dereference would read another process's memory.
+
+So **D17 survives, as a per-carrier save and restore in an endovisor schedule hook**: the tenant's floating-point state, the FS and GS bases, and the kernelet's page-table root. That hook *is* what Linux gets for free from `kernel_switch_mm()` and its own FPU handling.
+
+### 4.2 What is simpler on Asterinas, and what is not
+
+The first draft claimed three simplifications. One survives, one is partial, and one was wrong.
+
+1. **Survives: no watch timer and no preemption notifiers.** The host's own tick already fires on every processor and already knows which kernelet task it interrupted, which is where `preempt_off_ticks` is enforced today. Linux needs a pinned high-resolution timer per processor and a notifier per carrier to get the same thing.
+2. **Partial: no mirrored preemption count — but the record still needs two fields.** The host does read the kernelet's guard count directly, so nothing has to be mirrored into a host counter. But a single count is not enough, and the Linux prototype found out why: "`masked` became two fields, a guard count and a virtual interrupt flag, because a single one would have meant a kernelet holding a spin lock received no ticks." Asterinas starts from a worse place, because its `interrupts-and-time.md` *aliases* `irq::disable_local` and `DisabledLocalIrqGuard` to the preemption count, justified explicitly by "a kernelet has no handlers: its handlers are jobs on the worker task". **Upcalls give it handlers**, so that decision must be re-taken along with three consequences the reviewer traced: `iretq` restores the interrupt flag from the interrupted frame, so without an `irq_off` field the host can redirect again inside the stub (nested upcalls, and `InterruptLevel` would report L2); `CpuLocalCell`'s read-modify-write on a replica raises the count to exclude a *migration*, and would no longer exclude a same-virtual-CPU handler touching the same cell, where the tree relies on one `gs:`-relative instruction; and `halt_cpu` takes `disable_local()` before halting, so `vcpu_idle` would arrive as a sleeping service call under a nonzero count, which the service epilogue refuses. The fix is to back-port the Linux record's two fields *and* the four `arch::irq` primitives, and to rewrite the invariant sentence "no kernelet code ever runs in interrupt context".
+3. **Wrong: "no address-space adoption".** §4.1.3. There is a counterpart, it is D17, and it must be kept.
+
+So the honest summary is that the back-port is **comparable in size to the Linux one**, not smaller. What Asterinas genuinely avoids is the timer and notifier machinery; what it gains instead is a schedule hook and the stack prerequisites of §4.1.2. The sentence "What Asterinas must add that Linux did not: nothing" is withdrawn.
 
 ### 4.3 What the back-port deletes
 
@@ -222,23 +242,22 @@ What Asterinas must add that Linux did not: nothing. The upcall redirect is the 
 | the `spawn_task` hook and `KerneletTaskBody` | D61 | nothing spawns host threads per task |
 | `RUNNING`, `BODIES`, the `TaskName` space | D7 | there are no names to exchange |
 | the per-task `TaskRecord` | D8 | the record becomes per virtual CPU |
-| `preempt_switch` as a *task switch* from the trap-return path | D16, A8 | the host redirects; the kernelet switches its own tasks |
-| the host's save of FS/GS and XSAVE on involuntary switches | D17 | the state belongs to a tenant thread and moves with it |
-| the host-set RCU extended quiescent state | D32, A9 | a virtual CPU that idles knows it is idling |
+| `preempt_switch` as a *task switch* from the trap-return path | D16 | the host redirects to one of three stubs; the kernelet switches its own tasks. **D16 is rewritten, not deleted**, and **A8 stays** for the yield stub, which still reaches the host's own switch |
 | the no-idle-threads `cfg` lines | D67 | a kernelet has idle tasks again, as on a machine |
 | `nice`/affinity builders on `TaskOptions` and the kernel proper's `cfg` lines for them | D31 | the kernel proper's own scheduler honors them now |
 
-**What happens to the unverified assumptions, stated correctly.** An earlier draft claimed A8 and A9 are "retired, not carried". That was wrong, and the correction matters:
+**What happens to the unverified assumptions.** Two drafts of this plan got this wrong in two different ways. The first said A8 and A9 are "retired, not carried"; the second said they are replaced by weaker assumptions. Corrected against the tree:
 
-- A8 (*the host can run OSTD's switch protocol from the interrupt-return path*) is **replaced** by a weaker claim — *the host can rewrite two fields of a trap frame so that the interrupted kernelet code resumes at the image's upcall stub*. Strictly less risky, and §4.1 shows the code that would do it. It is still an assumption, and it is an **Asterinas** assumption: the Linux prototype's A32 measured a redirect from a *timer callback* on a different kernel, and does not discharge it.
-- A9 (*host-set RCU quiescence is sound*) is **replaced** by *a kernelet notes its own quiescence at its own switch points, and a virtual CPU that idles notes it before parking*. That is how RCU works on a machine, so the argument is better, but OSTD's grace-period monitor has to be checked against the carrier model rather than assumed.
-- Appendix B adds three further Asterinas assumptions (the redirect, the guard-count deferral without a mirror, share by carrier count under a host with no group scheduler).
+- **A8 stays.** The upcall replaces one of D16's three jobs (§4.1.1). The yield stub still hands the host CPU to another host task from the trap-return path, which is what A8 is about — and nothing else in OSTD preempts a host kernel thread that computes (*checked*: `might_preempt()` is reached only from `halt_cpu`, the user-mode return and after an enqueue). What *is* new and weaker is the redirect itself, and it needs an assumption of its own on each host.
+- **The redirect is unexercised on both hosts.** Linux's A32 measured a redirect from a *timer callback*, and the Linux prototype kept the interrupted instruction pointer *in the record* rather than on the stack. The stack-push variant this plan back-ports has never run anywhere.
+- **A9 changes hands rather than retiring.** *Checked*: `finish_grace_period` is called only from `switch_to_task`, and a period completes only when the mask is full (`ostd/src/sync/rcu/monitor.rs`). A virtual CPU asleep in `vcpu_idle` passes no switch point, so a period begun while it sleeps never completes and deferred frees never run. "The kernelet notes its own quiescence" is not enough: the state must persist across the sleep and the monitor's restart must count a sleeping virtual CPU as quiescent — the same extended quiescent state as D32, with the kernelet as its writer instead of the host.
+- Appendix B adds three further Asterinas assumptions.
 
-So: the *risk* drops, the *count* does not. §5 says what would discharge them.
+So: the *risk* drops on one path and the *count of unverified claims goes up*, not down. §5 says what would discharge them.
 
 ### 4.4 What it buys
 
-- **A tenant's thread count stops buying machine share.** The currency changes from tenant-chosen (how many threads it runs) to operator-chosen (how many virtual CPUs it was given). That is the honest claim, and it is a real gain. It is *not* "fairness becomes a property of the design": the Linux argument's second step is "**the control group** bounds the N tasks", and Asterinas has no group scheduler, so *N* carriers at a `nice` still take *N* shares against a neighbor's *M*. Proportional share on Asterinas needs either D62's quota kept as the bound, or a group scheduler in the host — which is a scheduler project and out of scope. **For this reason the fairness argument belongs in each host chapter, not in Design.**
+- **A tenant's thread count stops buying machine share.** The currency changes from tenant-chosen (how many threads it runs) to operator-chosen (how many virtual CPUs it was given). That is the honest claim, and it is a real gain. It is *not* "fairness becomes a property of the design": the Linux argument's second step is "**the control group** bounds the N tasks", and Asterinas has no group scheduler — *checked on the tree*: `kernel/core/src/sched/sched_class/fair.rs` carries a per-*thread* weight of 1024·1.25<sup>−nice</sup> and there is no group entity anywhere under `kernel/core/src/sched/`. So a sandbox's share is the sum over its host threads: *N* carriers plus its device threads. Two sandboxes at the same `nice` with *N* = 2 and *M* = 8 get one share against four, and there is no "equal weight" to set. Equalizing needs a per-carrier weight of about *W*/*N* off a forty-step geometric ladder, or D62's quota kept as the ceiling, or a real group scheduler in the host — which is a scheduler project and out of scope. **For this reason the fairness argument belongs in each host chapter, not in Design.**
 - **The tenant's kernel schedules the tenant's threads**: real-time policies, `nice` within the sandbox, `/proc/loadavg` and `sched_getscheduler` become true instead of inert.
 - **A sandbox stops costing the host two task objects and a 512 KiB stack per tenant thread.** A thousand tenant threads cost *N* carriers and a thousand kernelet stacks from the sandbox's own accounted pool.
 - **A task switch stops crossing**: ~1,000 cycles, *measured on the booted prototype of the Linux design*, **[unverified]** on Asterinas.
@@ -249,14 +268,17 @@ So: the *risk* drops, the *count* does not. §5 says what would discharge them.
 - The OSTD prerequisites the Linux design names (D118, D122) become prerequisites on **both** hosts — which is where they belonged, since they are additions to OSTD, not to a host.
 - **The host loses its view inside a sandbox** (§2.2): no load balancing within the sandbox's CPU set, no per-thread charging, no host-side visibility of what a tenant runs. `times(2)` becomes the kernelet's own business, as on a machine.
 - **The kernel proper's scheduler becomes load-bearing** without evidence that it is good (§2.2, A33).
-- **Neighbor latency.** The Linux chapter calls the cooperation contract "the one thing this design costs a host that a container does not": about 2 ms on every processor a sandbox may touch, and "a real-time Linux should not host kernelets at all". The Asterinas equivalent must be stated the same way — and note that Asterinas's present bound **kills** the kernelet (`preempt_off_ticks` → `PreemptOffTooLong`) where Linux's forces a yield. Which policy Asterinas keeps is a decision pass 1 must take, not inherit.
+- **Neighbor latency.** The Linux chapter calls the cooperation contract "the one thing this design costs a host that a container does not": about 2 ms on every processor a sandbox may touch, and "a real-time Linux should not host kernelets at all". The Asterinas equivalent must be stated the same way — and note that Asterinas's present bound **kills** the kernelet where Linux's forces a yield (§4.6(4)).
+- **Three mechanisms Asterinas must gain that it does not have today**: the two-stack rule with its reserve and function-entry check (§4.1.2), a per-carrier schedule hook for tenant state and the page-table root (§4.1.3), and the second record field with the four `arch::irq` primitives behind it (§4.2). The first draft of this plan said the back-port adds nothing; it adds these.
+- **Dead code left behind, to be swept in the same pass**: D56's hand-off of a dead kernelet task's reference to the reaper in `after_switching_to` has nothing to hand off, and *Exited*'s definition ("no stack of the kernelet is in use anywhere") must be restated as "no carrier is in kernelet text".
 - Every back-ported claim rests on evidence from the other host until §5 is done.
 
 ### 4.6 What the back-port leaves open
 
-1. **Does Asterinas need the FPU services at all?** The host is Asterinas; `FpuContext::save`/`load` are OSTD's own code and might stay identical with the host saving nothing. The Linux prototype's unexplained deviation about *where* the save belongs must be understood first.
-2. **What enforces the quota once `task_park`/`task_unpark` are deleted?** D62's throttle is implemented through them: every task parks at its next quiescent point on a per-kernelet throttle queue. With carriers there are no per-task parks, so the ceiling needs a new mechanism (park the carriers, or refuse to schedule them) — pass 1's work, not a question to defer.
-3. **Do worker threads survive for anything?** With upcalls there is nothing left for a worker to fetch. Confirm nothing else in the chapter depends on a per-virtual-CPU thread existing.
+1. **Does Asterinas need the FPU *services* at all?** The per-carrier save of §4.1.3 is the host's; whether the *kernelet* also needs `fpu_save`/`fpu_load` to move state between its own tenant threads depends on where the kernel proper's own save sits, and the Linux prototype's unexplained deviation about that must be understood first.
+2. **What enforces the quota once `task_park`/`task_unpark` are deleted?** D62's throttle is implemented through them: every task parks at its next quiescent point on a per-kernelet throttle queue. With carriers there are no per-task parks, so the ceiling needs a new mechanism (park the carriers, or refuse to schedule them) — and since D62 is also the only answer to proportional share (§4.4), this is load-bearing, not housekeeping.
+3. **Where do the idle tick and the grant notice go?** *Answered, and it is not "nowhere"*: `JOB_TICK` at `idle_tick_hz` and `JOB_GRANT` are worker jobs, and the workers are deleted. The idle tick becomes `vcpu_idle`'s deadline (D122, now a prerequisite); the grant notice becomes a bit in the virtual CPU's record, as on Linux, where the kernelet reads the grant table's published length. Confirm nothing else depends on a per-virtual-CPU thread existing.
+4. **Does the bound kill or yield?** Asterinas's today kills (`preempt_off_ticks` → `PreemptOffTooLong`); Linux's forces a yield and counts it. Choose one for the common chapter, and state that the bound is counted by the host, not read from the kernelet's record.
 
 ---
 
@@ -276,7 +298,13 @@ Then:
 
 4. **Share by carrier count.** Two sandboxes on the same host CPUs, one running 1 busy kernelet task and the other 50, with equal configuration. Assertion: neither sandbox's share moves with its task count. (Today's design fails this by construction. Note that the Linux prototype measured a sandbox against a *sibling control group*, never two sandboxes, so this experiment is new work, not a port.)
 5. **Cooperation and its bound.** A kernelet holding a spin lock across the host's preemption point: zero involuntary switches inside a critical section, and a bounded stay for a deliberate overstayer — with the kill-or-yield decision of §4.5 exercised.
-6. **What was deleted is really gone.** A sandbox with 50 tenant threads must cost *N* host threads plus device threads, not 50-something, and no 512 KiB host stack per tenant thread.
+6. **What was deleted is really gone.** A sandbox with 50 tenant threads must cost *N* carriers plus its device threads, not 50-something, and no 512 KiB host stack per tenant thread.
+7. **Terminating a carrier that spins in kernelet text.** The kill half of D16 disappears with the task-switch half; the exit stub of §4.1.1 replaces it, and nothing has shown that it works on Asterinas.
+8. **A host trap on a kernelet stack.** With no interrupt-stack table (§4.1.2), the tick, a page fault and a double fault all land on whatever kernelet stack was current. Show that the reserve holds and that a deliberate overflow is caught rather than resetting the machine.
+9. **Tenant state across a host preemption.** The counterpart of the Linux prototype's floating-point experiment, which needed 518,501 check-ins to find its bug: a tenant thread's vector registers, FS/GS bases and page-table root must survive the host preempting its carrier and running something else (§4.1.3).
+10. **A grace period with an idle virtual CPU.** Begin one while a virtual CPU sleeps in `vcpu_idle`, and show it completes and the deferred frees run (§4.3).
+
+Two practical notes. The share experiments (4) and the new N-vs-M one belong together: measure two sandboxes with equal *N*, then with *N* = 2 against *M* = 8, and report both, because the second is the one that shows what carrier count buys. And unlike the Linux prototype, which loaded a module, an Asterinas prototype must build one crate twice under the `kernelet` feature and combine both into one boot image — a build problem the Linux side never had.
 
 Not in scope for a first Asterinas prototype: devices, channels, zero-copy I/O, the runtime, more than one kind, the window's full layout.
 
@@ -413,10 +441,10 @@ One table, with a new **scope** column: *common*, *Asterinas*, *Linux*.
 | D67 | no idle threads | **retired** |
 | D88 | seats | already retired on Linux; nothing in the Asterinas text depends on the concept (*checked*: only the register mentions it) — but D85, D88, A25 and D101 all link `linux-mode/…/tasks.md#vcpus`, which moves |
 | D116–D122 | the Linux second-level scheduler | **common**, with per-host bindings: the mirror, the watch timer and notifiers are **Linux**; the trap-return redirect is **Asterinas** |
-| A8 | the host can switch tasks from the trap-return path | **replaced** by the weaker redirect assumption, still **[unverified]** on Asterinas (§4.3) |
-| A9 | host-set RCU quiescence is sound | **replaced** by the in-kernelet rule, to be checked |
+| A8 | the host can switch tasks from the trap-return path | **kept**, for the yield stub (§4.3) |
+| A9 | host-set RCU quiescence is sound | **kept in substance, rewritten**: the extended quiescent state survives, with the kernelet as its writer, and the monitor must be checked against a virtual CPU that sleeps through a whole grace period |
 | A30–A34 | the Linux scheduler assumptions | **Linux** for the mirror and the notifier; **common** for the upcall (A32) and the cost (A34), each needing its own Asterinas measurement |
-| new | three Asterinas assumptions | the trap-return redirect; the guard-count deferral without a mirror; share by carrier count under a host with no group scheduler |
+| new | four Asterinas assumptions | the trap-return redirect written below the hardware frame (unexercised on *both* hosts); the guard-count deferral without a mirror; the per-carrier save of tenant state and the page-table root; share by carrier count under a host with no group scheduler |
 
 ---
 
@@ -433,14 +461,14 @@ One table, with a new **scope** column: *common*, *Asterinas*, *Linux*.
 
 ## 9. What the reviews changed
 
-Three independent reviews read the first draft: one on the design content, one on executability against the book's tooling, one on the premises. The second and third have been folded in; the first is still running as this revision is written, and anything it finds will be reported separately rather than silently merged.
+Three independent reviews read the first draft: one on the design content, one on executability against the book's tooling, one on the premises. All three are folded in. Between them they reported thirteen blocking issues, and seven of those changed a conclusion rather than a wording:
 
-Corrections that changed a conclusion, not just wording:
-
-- **The Paper is not out of scope** (§0). New, and it overrides the task's stated blast radius.
-- **"Fairness becomes a property of the design" was wrong** (§4.4): the Linux argument's load-bearing step is the control group, which Asterinas lacks.
-- **"Two unverified assumptions are retired" was wrong** (§4.3): they are replaced by weaker ones that the Linux prototype does not discharge.
+- **The Paper is not out of scope** (§0). It overrides the task's stated blast radius, because `AGENTS.md` says the Paper wins.
+- **"Fairness becomes a property of the design" was wrong** (§4.4): the Linux argument's load-bearing step is the control group, which Asterinas does not have. Two sandboxes at one `nice` with different carrier counts do not get equal share.
+- **The unverified assumptions do not go down, they go up** (§4.3). A8 stays for the yield stub; A9 changes hands but survives in substance; the stack-push redirect is unexercised on *both* hosts, because the Linux prototype kept the interrupted pointer in the record.
+- **The redirect as written could not be implemented** (§4.1.1): on a kernel-mode trap with no interrupt-stack table, the words just below the interrupted stack pointer are the `SS` and `RSP` the `iretq` pops.
+- **Two of the three "simpler than Linux" claims were wrong** (§4.2): the record needs two fields and the `disable_local` aliasing must be re-taken, and address-space adoption *does* have a counterpart — D17, which must be kept, because a carrier is a host kernel thread and the host's schedule handlers skip those.
 - **The pass order would have failed `make check` at three commits** (§6): moves and repoints must be in the same commit, and passes 1 and 2 must be one branch.
-- **The word arithmetic did not close** (§3.4), and four "split" rows are rewrites (§A.4).
-- **Three Asterinas advantages were undersold** (§2.2) and three costs were missing (§4.5).
-- **The new chapter's directory, three missing index pages, and the figures** had no owner (§3.1, §6 pass 5).
+- **The word arithmetic did not close** (§3.4), four "split" rows are rewrites (§A.4), and the new chapter's directory, three missing index pages and the figures had no owner (§3.1, §6).
+
+The net effect on the recommendation: the back-port is still the right move, for the reasons in §4.4 — but it is **comparable in size to the Linux one, not smaller**, it adds three mechanisms Asterinas does not have today, and it cannot be stated as design until §5's first three experiments run. The plan's estimate of its own cost went up; its conclusion did not change.
