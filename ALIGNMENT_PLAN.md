@@ -359,7 +359,7 @@ Revised after review: the original pass order would have failed `make check` at 
 | # | pass | what it does | why here |
 |---|---|---|---|
 | **1** | **The Asterinas prototype, experiments 1–3** | A minimal endovisor, a minimal vOSTD and the tree's own 100-line kernel, in a worktree of `~/Workspace/asterinas`: Hello World on the real path, two carriers running the kernel proper's own scheduler, and the trap-return redirect with a bit-identical checksum. Settle §4.6's four questions in code and report each as a finding. Run §7's soundness list against the tree first; if one fails, revise the plan rather than force it. | *Decided (§8.4)*: this gates the prose. It is also the only way §4.1.1's redirect gets exercised at all, since neither host has run it. |
-| **2** | **The back-port, as one branch** | Rewrite `virtualizing-ostd/tasks.md` (splitting it into *Tasks and virtual CPUs* + *Scheduling*), `interrupts-and-time.md`, the processor group of `kernelet-api-service.md`, the `spawn_task` hook and task-name space in `kernelet-api-control.md`, the entry rule and I6/I7 in `principles.md`, `faults-and-reclamation.md`, `the-rest.md`, and `index.md` including its figure. Fold in pass 1's findings and the group-scheduler prerequisite of §8.3. Revise D7, D8, D9, D11, D15, D16, D17, D31, D32, D61, D62, D66, D67; keep A8 and A9 in their new forms; add the Asterinas side of D116–D122 and the four new assumptions. Sweep the dead code of §4.5. | These pages quote each other's model; split across two commits the chapter states two incompatible things in between, and `make check` tests links, not sense. |
+| **2** | **The back-port, as one branch** (twelve files, not eight: **Appendix C** counts them) | Rewrite `virtualizing-ostd/tasks.md` (splitting it into *Tasks and virtual CPUs* + *Scheduling*), `interrupts-and-time.md`, the processor group of `kernelet-api-service.md`, the `spawn_task` hook and task-name space in `kernelet-api-control.md`, the entry rule and I6/I7 in `principles.md`, `faults-and-reclamation.md`, `the-rest.md`, and `index.md` including its figure. Fold in pass 1's findings and the group-scheduler prerequisite of §8.3. Revise D7, D8, D9, D11, D15, D16, D17, D31, D32, D61, D62, D66, D67; keep A8 and A9 in their new forms; add the Asterinas side of D116–D122 and the four new assumptions. Sweep the dead code of §4.5. | These pages quote each other's model; split across two commits the chapter states two incompatible things in between, and `make check` tests links, not sense. |
 | **3** | **The Overview and the terminology** | The three Overview sentences of §0 and the reconciliation of `overview/terminology.md` (it still defines "endovisor ABI" as the image's table, and has no *carrier* or *virtual CPU*). Nothing under `src/paper/`. | Small; may be folded into pass 2's branch. The Paper stays a recorded debt (§0). |
 | **4** | **Create Design, page by page** | For each page in §3.3: create it, move the text, repoint **every** inbound link in the same commit (the register's 167 included), update `SUMMARY.md`, run `make renumber`, check. Rename `design/` → `asterinas-mode/` first, as one mechanical commit. Add the three missing `index.md` files. | Moving one page at a time keeps every commit green, which the all-at-once order could not. |
 | **5** | **Trim the host chapters** | Delete from both host chapters what Design now holds; add each chapter's *What this chapter assumes* page; edit `linux-mode/index.md`'s "written to be read alone" and `AGENTS.md`'s reading rule **in this commit**, as `AGENTS.md` requires of a reversed decision. | *Decided (§8.6)*: extraction as planned, so the promise is retired deliberately rather than by drift. |
@@ -493,6 +493,30 @@ One table, with a new **scope** column: *common*, *Asterinas*, *Linux*.
 | A9 | host-set RCU quiescence is sound | **kept in substance, rewritten**: the extended quiescent state survives, with the kernelet as its writer, and the monitor must be checked against a virtual CPU that sleeps through a whole grace period |
 | A30–A34 | the Linux scheduler assumptions | **Linux** for the mirror and the notifier; **common** for the upcall (A32) and the cost (A34), each needing its own Asterinas measurement |
 | new | four Asterinas assumptions | the trap-return redirect written below the hardware frame (unexercised on *both* hosts); the guard-count deferral without a mirror; the per-carrier save of tenant state and the page-table root; share by carrier count under a host with no group scheduler |
+
+---
+
+## Appendix C: the back-port's edit inventory
+
+§6's pass-2 row named eight files. **It is twelve** (*counted* by grepping the Asterinas chapter for the mechanisms §4.3 deletes: `worker`, `job_wait`, `JOB_*`, `task_spawn`, `TaskName`, `BODIES`, `TaskRecord`, `preempt_switch`, `task_park`/`task_unpark`, `task_set_nice`/`task_set_vcpus`, `task_exit`/`task_destroy`/`task_yield`, "idle thread", "512 KiB", "inert"). Four files carry them that the pass-2 row does not mention, which is also why no page left for pass 4 can be extracted before pass 2: the back-port reaches nearly the whole chapter.
+
+| file | what pass 2 must do there | mentions |
+|---|---|---|
+| `virtualizing-ostd/tasks.md` | rewritten and **split** into *Tasks and virtual CPUs* + *Scheduling* | 30 |
+| `kernelet-api-service.md` | the processor group: 8 of 21 services and `job_wait` go; the prologue and epilogue restated | 42 |
+| `virtualizing-ostd/interrupts-and-time.md` | rewritten: the upcall replaces the worker jobs; D18's aliasing replaced by the four `arch::irq` primitives (§4.7(4)) | 25 |
+| `virtualizing-ostd/index.md` | the 72-row classification: every row naming a worker, a job, an inert scheduler or a host thread | 18 |
+| `faults-and-reclamation.md` | the depth rule, the reaper's dead hand-off (§4.7(2)), *Exited*'s definition, and A6 from assumption to unmet prerequisite (§4.7(5)) | 12 |
+| `kernelet-api-control.md` | the `spawn_task` hook, the task-name space, the `nice` mapping and the group-scheduler prerequisite | 14 |
+| `principles.md` | the entry rule, I6 and I7, and "no kernelet code ever runs in interrupt context", which upcalls falsify | 2 |
+| `virtualizing-ostd/the-rest.md` | `__handler_entry` from description to prerequisite (§4.7(1)); the idle rule | 6 |
+| `index.md` | the chapter's own figure and its three false labels (§6 pass 6) | — |
+| **`virtualizing-ostd/devices.md`** | **not in the pass-2 row**: the completion path is "one worker wakeup per interrupt" four times over, and a device thread's 512 KiB stack | 10 |
+| **`virtualizing-ostd/memory.md`** | **not in the pass-2 row**: `JOB_GRANT` as the arrival path for a new run, and `pt_activate` recording the root "so that the host's scheduler restores it", which §4.7(3) changes | 6 |
+| **`zero-copy-io.md`** | **not in the pass-2 row**: the completion hop is counted as "the worker, at completion" in the comparison table that carries the page's argument | 3 |
+| **`endovisor.md`** | **not in the pass-2 row**: `on_oops(… task: TaskName …)`, "the virtual CPU whose worker delivers its interrupts", and the per-sandbox cost list's 512 KiB device-thread stack | 3 |
+
+Two consequences for the plan. The pass-2 commit is larger than §6 implies, and it cannot be split without the chapter stating two incompatible models in between — which is the reason §6 gave for keeping it one branch, now with a count behind it. And `virtualizing-ostd/index.md`'s classification, which Appendix A sends to Design in pass 4, must be **back-ported before it moves**: 18 of its rows describe the model that pass 2 replaces. That is why the premature move of that page was reverted.
 
 ---
 
