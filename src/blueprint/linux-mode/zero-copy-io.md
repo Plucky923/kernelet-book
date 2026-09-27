@@ -33,7 +33,7 @@ All of it is **[unverified]**. The two assumptions with the most weight are that
 
 ## The rings, for completeness
 
-The ring layout does not depend on the host. It is given here so that this page can be implemented alone; the [Asterinas host's version](../design/zero-copy-io.md) argues each choice.
+The ring layout does not depend on the host. It is given here so that this page can be implemented alone; the [Asterinas host's version](../asterinas-mode/zero-copy-io.md) argues each choice.
 
 A lending device has a **submit ring** and a **complete ring**, each a power-of-two array of at most 256 fixed-size entries in the kernelet's grant, registered once with a service the second version adds, `dev_ring_set(dev, submit_paddr, complete_paddr, entries)`, which is refused while any request is in flight. The kernelet writes the submit ring and reads the complete ring; the endovisor does the reverse; each side publishes its counter in the first entry of the ring it writes. A second added service, `dev_notify(dev)`, takes no pointer and is the only doorbell.
 

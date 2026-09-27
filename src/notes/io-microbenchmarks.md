@@ -1,6 +1,6 @@
 # I/O microbenchmarks
 
-*Working material behind [Zero-copy I/O](../blueprint/design/zero-copy-io.md): the unit costs it labels **measured here**. Host: Intel Xeon E3-1270 v6 (4 cores, 8 threads), Linux 6.8.0, `gcc -O2`, one run, 2026-09-10. The script is reproduced at the end.*
+*Working material behind [Zero-copy I/O](../blueprint/asterinas-mode/zero-copy-io.md): the unit costs it labels **measured here**. Host: Intel Xeon E3-1270 v6 (4 cores, 8 threads), Linux 6.8.0, `gcc -O2`, one run, 2026-09-10. The script is reproduced at the end.*
 
 ## Results
 

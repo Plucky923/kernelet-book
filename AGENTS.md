@@ -34,7 +34,7 @@ Use exactly these words, and use them consistently:
 
 ## Cross-references and links
 
-- Section references are links whose text is a `§` number: `[§4.1.3](../design/process/switch-policy.md)`. **Never type the number by hand.** After any change to `SUMMARY.md`, or to the `##` headings of a chapter that has no child pages, run `make renumber`; it re-derives every `§` text from the table of contents.
+- Section references are links whose text is a `§` number: `[§4.1.3](../asterinas-mode/process/switch-policy.md)`. **Never type the number by hand.** After any change to `SUMMARY.md`, or to the `##` headings of a chapter that has no child pages, run `make renumber`; it re-derives every `§` text from the table of contents.
 - A term used on a page but defined on another may be linked on its first use, with the term itself as the link text: `[owner array](../memory/frames.md)`. That is the preferred way to make a page self-contained; do not rewrite sentences for it.
 - Links go to files (`…/switch-policy.md`), or to explicit `{#id}` heading anchors. Give a heading an explicit id whenever something links to it; do not rely on mdBook's slug rules.
 - Index pages are `index.md`, never `README.md`: mdBook 0.5 renders a `README.md` chapter as `index.html` but rewrites links to a `README.html` that does not exist. The checker rejects such links.

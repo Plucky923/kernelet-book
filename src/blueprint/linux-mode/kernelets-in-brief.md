@@ -38,7 +38,7 @@ The book calls the idea **API virtualization**: where a hypervisor virtualizes t
 
 ## Two hosts, one design
 
-The book's main design chapter, [Design](../design/index.md), specifies kernelets with **Asterinas itself as the host kernel**: the machine boots Asterinas, and kernelets are further instances of the same kernel. This chapter specifies the same kernelets with **Linux as the host**: the operator keeps the kernel they already run, applies one small patch, loads one module, and selected workloads get a kernel of their own.
+The book's other design chapter, [Design for Asterinas](../asterinas-mode/index.md), specifies kernelets with **Asterinas itself as the host kernel**: the machine boots Asterinas, and kernelets are further instances of the same kernel. This chapter specifies the same kernelets with **Linux as the host**: the operator keeps the kernel they already run, applies one small patch, loads one module, and selected workloads get a kernel of their own.
 
 Nothing in a kernelet says who implements the service table, and that is what makes the second host possible. The kernel proper's source is identical on both. vOSTD is one source with [three host-specific bodies](virtualizing-ostd/index.md). What differs is everything behind the table, and that is what this chapter is about. It is written to be read alone. Where the other chapter treats the same subject it is linked, for comparison and never for a definition.
 

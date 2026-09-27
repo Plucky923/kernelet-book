@@ -1,6 +1,6 @@
 # OSTD API inventory
 
-The public API of OSTD as read from the Asterinas tree at commit `ab9a4cfdc726263b3f41ccea0337633e24b443fc` (the tree's `HEAD` when this note was written, dated 2026-08-31), and how the kernel above OSTD uses it. This is the raw material for the Design chapter's [taxonomy](../blueprint/design/virtualizing-ostd/index.md), which decides what each item becomes in vOSTD. Nothing here is a design decision.
+The public API of OSTD as read from the Asterinas tree at commit `ab9a4cfdc726263b3f41ccea0337633e24b443fc` (the tree's `HEAD` when this note was written, dated 2026-08-31), and how the kernel above OSTD uses it. This is the raw material for the design chapters's [taxonomy](../blueprint/asterinas-mode/virtualizing-ostd/index.md), which decides what each item becomes in vOSTD. Nothing here is a design decision.
 
 **Sizes, measured on the tree** (lines of `.rs` files, `wc -l`):
 
@@ -189,5 +189,5 @@ The kernel imports that touch the machine directly (`IoPort`, `IRQ_CHIP`, `Mappe
 | `network` | 829 | no |
 | `softirq` | 820 | uses `cpu_local!` and the bottom-half hooks |
 | `uart` | 342 | yes |
-| `logger` | 162 | *not host-only*: writes to the console devices and falls back to `early_print`; stays in the kernelet ([The rest](../blueprint/design/virtualizing-ostd/the-rest.md)) |
+| `logger` | 162 | *not host-only*: writes to the console devices and falls back to `early_print`; stays in the kernelet ([The rest](../blueprint/asterinas-mode/virtualizing-ostd/the-rest.md)) |
 | `console` | 74 | no |

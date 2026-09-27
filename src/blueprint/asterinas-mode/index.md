@@ -1,4 +1,4 @@
-# Design
+# Design for Asterinas
 
 <figure class="fwd-fig">
 <div class="head">

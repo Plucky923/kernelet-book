@@ -123,7 +123,7 @@ Background, for a reader new to either side:
 - [Kernelets in brief](kernelets-in-brief.md): the two-layer kernel, API virtualization, and the vocabulary.
 - [The Linux this chapter needs](background.md): tasks, the entry path, signals, address spaces, modules, program loaders, control groups.
 
-The design, in the order of the book's main [Design](../design/index.md) chapter:
+The design, in the order of [Design for Asterinas](../asterinas-mode/index.md):
 
 - [Boundaries and trust](principles.md): the parties, the interfaces, the threat model, the invariants.
 - [Builds and images](builds-and-images.md): one source, one shared text, many instances; what the build checks.

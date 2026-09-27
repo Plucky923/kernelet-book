@@ -122,11 +122,11 @@ The Blueprint
 └── Design for Linux            what Linux does to meet it                (today's Chapter 13)
 ```
 
-**Directories.** `src/blueprint/design/` is today the Asterinas chapter, so the names must be settled before pass 3 starts. Following the precedent of `linux-mode/`:
+**Directories.** `src/blueprint/asterinas-mode/` is today the Asterinas chapter, so the names must be settled before pass 3 starts. Following the precedent of `linux-mode/`:
 
 | chapter | directory |
 |---|---|
-| Design (common) | `src/blueprint/design/` — reused, its meaning widened |
+| Design (common) | `src/blueprint/asterinas-mode/` — reused, its meaning widened |
 | Design for Asterinas | `src/blueprint/asterinas-mode/` — today's `design/`, moved with `git mv` |
 | Design for Linux | `src/blueprint/linux-mode/` — unchanged |
 
