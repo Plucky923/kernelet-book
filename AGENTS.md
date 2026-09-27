@@ -12,11 +12,13 @@ Use exactly these words, and use them consistently:
 
 | term | meaning |
 |---|---|
-| **kernelet** | one instance of the Asterinas kernel compiled against the OSTD-shaped API, in ring 0, in the same image as every other kernelet |
+| **kernelet** | one instance of the Asterinas kernel compiled against the OSTD-shaped API, in kernel mode, in the same address space as every other kernelet |
 | **sandbox** | one tenant's environment: a kernelet plus the user-space processes it serves; what a VM or a container is to its tenant |
-| **host kernel (or host)** | the first instance of the Asterinas kernel that boots the machine and runs init and the host user space; the same source as kernelet, built against OSTD, but with different configurations |
+| **host kernel (or host)** | the kernel that boots the machine, runs init and the host user space, and hosts the kernelets. With Asterinas as the host it is the first instance of the same source as a kernelet, built against OSTD instead of vOSTD; with Linux as the host it is Linux |
 | **endovisor** | the component inside the host kernel that creates, schedules, destroys and mediates kernelets; *endo-* because it sits inside the host kernel and beside the kernelets, whereas a hypervisor sits beneath its guests |
 | **kernelet runtime** | the user-space program on the host that creates and configures sandboxes, as a container runtime does |
+| **virtual CPU** | one of the fixed number of processors a sandbox is given when it is created; the unit the host schedules a sandbox's share in |
+| **carrier** | a task of the host kernel that carries one of a kernelet's virtual CPUs: what the host schedules, and what the kernelet runs its own tasks on. Defined in the Overview's terminology; used by the Linux chapter today, and by the Asterinas chapter after the back-port `ALIGNMENT_PLAN.md` describes |
 
 ## Voice and honesty
 
@@ -27,7 +29,9 @@ Use exactly these words, and use them consistently:
 
 - `src/SUMMARY.md` is the single source of order and numbering. The Executive Summary is an unnumbered prefix chapter; after it come three parts, **The Paper** (`src/paper/`), **The Blueprint** (`src/blueprint/`) and **The Notes** (`src/notes/`), numbered continuously by mdBook in order.
 - The Paper is the concise, research-paper form of the idea. It is self-contained: a page under `src/paper/` may link only to other pages under `src/paper/` (the checker enforces this), it cites external work by number against `paper/references.md`, and it should convert to LaTeX with little effort, so keep it to plain Markdown, one table and one Mermaid figure. The Blueprint is the design document a coding agent implements from. The Notes hold working material, outdated baselines and surveys; where a Note disagrees with the Blueprint, the Blueprint wins, and where either disagrees with the Paper, the Paper wins.
-- `src/blueprint/linux-mode/` ("Design for Linux") is a standalone chapter that mirrors the Design chapter's page order for a Linux host, defines its own terms (carrier, root carrier, virtual CPU, gate, kernelet stack, model and cache, upcall, the mirror, eviction), and gives its Linux source references as links to elixir.bootlin.com pinned at v6.12.
+- The Blueprint's design is **three chapters, not two**. `src/blueprint/design/` ("Design") is the host-independent design: what a kernelet is, what it may assume, and what any host must provide it. `src/blueprint/asterinas-mode/` ("Design for Asterinas") and `src/blueprint/linux-mode/` ("Design for Linux") are how each host meets it, in the same page order. A host chapter **may link into Design for anything host-independent and must not restate it**; where Design has a page on a subject, the host page carries only its own host's part and says so in its opening line. Terms are defined once, in Design or the Overview's terminology. The test, stated on `src/blueprint/design/index.md`: *does a sentence name a facility of a particular host?* Then it belongs to that host's chapter; otherwise it belongs in Design. Design is authoritative where a host chapter disagrees with it.
+- The Linux chapter gives its Linux source references as links to elixir.bootlin.com pinned at v6.12, and defines the terms that are Linux's own (root carrier, gate, kernelet stack, model and cache, the mirror, seat, eviction). The Asterinas chapter cites the Asterinas tree at commit `ab9a4cfdc`.
+- Design is being assembled from the two host chapters page by page, so until a subject has a page there the host chapters still carry it in full. The plan and its status are in `ALIGNMENT_PLAN.md` at the repository root.
 - Every chapter directory has an `index.md`. Where the original section had a preamble, that is the page; otherwise it is a short summary plus the list of subsections (mdBook does not generate a child list on the parent page, so the list is written by hand and must be kept in step with `SUMMARY.md`).
 - Files are named for their content, never numbered. Numbers live only in `SUMMARY.md` order.
 - Unwritten material is a `> **To be written.** …` blockquote stating scope and sources, never invented content.
