@@ -44,9 +44,6 @@ struct SandboxHooks {
     policy: Policy,
 }
 impl KerneletHooks for SandboxHooks {
-    fn spawn_task(&self, k: &Kernelet, body: KerneletTaskBody, hints: SpawnHints) -> Result<Arc<Task>, SpawnError> {
-        ThreadOptions::new(move || body.run()).cpu_affinity(hints.vcpus).nice(hints.nice).build_task()   // not yet running
-    }
     fn mmio_read(&self, k: &Kernelet, dev: DeviceId, off: u32, width: u8) -> u64 { self.models.read()[dev].read(off, width) }
     fn mmio_write(&self, k: &Kernelet, dev: DeviceId, off: u32, width: u8, v: u64) { self.models.read()[dev].write(k, off, width, v) }
     fn log(&self, k: &Kernelet, level: LogLevel, module: &str, text: &str) { self.push_log(LogLine::Record(level, module, text)) }

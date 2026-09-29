@@ -5,7 +5,7 @@
 <div class="tag">The kernelet architecture</div>
 <div class="title">One kernel source, two builds, one boundary at OSTD's API</div>
 </div>
-<svg viewBox="0 0 900 400" role="img" aria-label="The kernelet architecture. Left, the host: Linux apps and the kernelet runtime in user space; the host kernel with its Linux functionality and the endovisor; OSTD exposing the vanilla OSTD API and the kernelet API, whose control half the endovisor uses and whose service half vOSTD calls through the service table. Right, a kernelet: Linux apps in user mode over the kernel proper over vOSTD, the virtualized OSTD API, over its own image and the frames it has been granted. The host enters the kernelet only through the entry table to start a thread; devices are virtio over function calls between the endovisor and the kernelet.">
+<svg viewBox="0 0 900 400" role="img" aria-label="The kernelet architecture. Left, the host: Linux apps and the kernelet runtime in user space; the host kernel with its Linux functionality and the endovisor; OSTD exposing the vanilla OSTD API and the kernelet API, whose control half the endovisor uses and whose service half vOSTD calls through the service table. Right, a kernelet: Linux apps in user mode over the kernel proper over vOSTD, the virtualized OSTD API, over its own image and the frames it has been granted. The host enters the kernelet only through the entry table, to start a carrier or to redirect one; devices are virtio over function calls between the endovisor and the kernelet.">
 <defs>
 <linearGradient id="kad-cg" x1="0" y1="0" x2="1" y2="0">
 <stop offset="0%" stop-color="#00F7FF" stop-opacity=".22"/>
@@ -77,13 +77,13 @@
 <text x="430" y="149" fill="#5C93A8" font-size="8" text-anchor="middle">virtio over function calls</text>
 <text x="430" y="170" fill="#5C93A8" font-size="8" text-anchor="middle">vsock</text>
 <path d="M332 259 H520" stroke="#9AA0BE" stroke-width="1.2" marker-end="url(#kad-arrow)"/>
-<text x="430" y="252" fill="#6A6F8C" font-size="8" text-anchor="middle">entry table: start a thread</text>
+<text x="430" y="252" fill="#6A6F8C" font-size="8" text-anchor="middle">entry table: enter, and redirect</text>
 <path d="M520 281 H332" stroke="#00F7FF" stroke-width="1.2" marker-end="url(#kad-arrow-cyan)"/>
-<text x="430" y="298" fill="#5C93A8" font-size="8" text-anchor="middle">service table: 21 C-ABI calls</text>
-<text x="450" y="378" fill="#4C5170" text-anchor="middle" font-size="9">same source · two builds · a kernelet's threads are host threads · no hypervisor · no VM exit</text>
+<text x="430" y="298" fill="#5C93A8" font-size="8" text-anchor="middle">service table: 14 C-ABI calls</text>
+<text x="450" y="378" fill="#4C5170" text-anchor="middle" font-size="9">same source · two builds · the host schedules carriers · no hypervisor · no VM exit</text>
 </g>
 </svg>
-<figcaption>The kernelet architecture. Left: the host kernel, its Linux functionality and the endovisor beside it, over OSTD, which exposes the vanilla OSTD API and the kernelet API; the endovisor drives the control half and serves the kernelet runtime through the endovisor ABI. Right: a kernelet, the same Linux functionality over vOSTD, whose virtualized OSTD API reaches the host only through the service table, and which the host enters only through the entry table to start a thread. The dashed line is the user–kernel boundary; devices and channels are function calls between the endovisor and the kernelet.</figcaption>
+<figcaption>The kernelet architecture. Left: the host kernel, its Linux functionality and the endovisor beside it, over OSTD, which exposes the vanilla OSTD API and the kernelet API; the endovisor drives the control half and serves the kernelet runtime through the endovisor ABI. Right: a kernelet, the same Linux functionality over vOSTD, whose virtualized OSTD API reaches the host only through the service table, and which the host enters only through the entry table, to start a carrier or to redirect one. The dashed line is the user–kernel boundary; devices and channels are function calls between the endovisor and the kernelet.</figcaption>
 </figure>
 
 This chapter is the design of Asterinas Kernelets, built from the figure above. It answers four questions, and each page says which one it serves.
@@ -105,7 +105,8 @@ In this chapter:
 - [The kernelet API: service half](kernelet-api-service.md)
 - [Virtualizing OSTD](virtualizing-ostd/index.md)
   - [Memory](virtualizing-ostd/memory.md)
-  - [Tasks, scheduling, and CPUs](virtualizing-ostd/tasks.md)
+  - [Tasks, virtual CPUs, and carriers](virtualizing-ostd/tasks.md)
+  - [Scheduling](virtualizing-ostd/scheduling.md)
   - [Interrupts and time](virtualizing-ostd/interrupts-and-time.md)
   - [User mode](virtualizing-ostd/user-mode.md)
   - [Devices](virtualizing-ostd/devices.md)
