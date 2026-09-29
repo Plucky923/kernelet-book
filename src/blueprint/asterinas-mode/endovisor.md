@@ -51,7 +51,7 @@ impl KerneletHooks for SandboxHooks {
     fn mmio_write(&self, k: &Kernelet, dev: DeviceId, off: u32, width: u8, v: u64) { self.models.read()[dev].write(k, off, width, v) }
     fn log(&self, k: &Kernelet, level: LogLevel, module: &str, text: &str) { self.push_log(LogLine::Record(level, module, text)) }
     fn on_grant_exhausted(&self, k: &Kernelet) -> u32 { self.policy.extra_grains(k) }
-    fn on_oops(&self, k: &Kernelet, task: TaskName, msg: &str) { self.push_log(LogLine::Oops(task, msg)) }
+    fn on_oops(&self, k: &Kernelet, vcpu: VcpuId, msg: &str) { self.push_log(LogLine::Oops(vcpu, msg)) }
     fn on_dying(&self, k: &Kernelet, why: &ExitReason) { for m in self.models.read().iter() { m.cancel() } ; vsock_switch::mark_dead(k.id()) }
     fn on_exited(&self, k: &Kernelet, st: &ExitStatus) { /* record `st`; wake the sandbox's pollee */ }
 }
@@ -115,7 +115,7 @@ type KerneletAttach = ioc!(KERNELET_ATTACH, MAGIC, 0x10, InOutData<AttachArgs>);
     pub kind: u16,                   // BLOCK, CONSOLE, RNG, VSOCK, NET
     pub backing_fd: i32,             // BLOCK: a file or block device; CONSOLE, NET: an endpoint descriptor from `ENDPOINT`; else -1
     pub flags: u32,                  // BLOCK: read-only; NET: the MAC address in `arg`
-    pub vcpu: u16,                   // the virtual CPU whose worker delivers its interrupts
+    pub vcpu: u16,                   // the virtual CPU whose carrier takes its interrupts
     pub arg: u64,
     pub out_index: u16,              // written
 }
@@ -156,7 +156,7 @@ Everything. It runs in kernel mode in the host kernel and holds every kernelet's
 
 ## Costs
 
-- Per sandbox: the `Sandbox` object, its endpoints' queues, one device thread per device with a 512 KiB stack, and the kernelet's own cost from the [control half](kernelet-api-control.md).
+- Per sandbox: the `Sandbox` object, its endpoints' queues, one device thread per device with its host thread stack, and the kernelet's own cost from the [control half](kernelet-api-control.md).
 - Per `ioctl`: a system call on the host; none is on a kernelet's fast path.
 - Per byte through an endpoint: one copy into the queue and one out, one wakeup each way when the queue was empty or full.
 - Per host: the retry thread; per kind, the boot-time copy of its image ([Builds and images](builds-and-images.md)).

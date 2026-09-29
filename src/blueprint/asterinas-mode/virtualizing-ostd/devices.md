@@ -17,7 +17,7 @@ Each device has a **pseudo-physical MMIO base**, chosen by the endovisor and lis
 ```rust
 #[repr(C)] pub struct DeviceEntry {
     pub id: u16, pub kind: u16, pub irq: u8, pub _pad: u8,
-    /// The virtual CPU whose worker delivers this device's interrupts.
+    /// The virtual CPU whose carrier takes this device's interrupts.
     pub vcpu: u16,
     pub reg_bytes: u32, pub device_type: u32,
     /// The pseudo-physical address the kernelet's bus probe finds the register file at.
@@ -97,7 +97,7 @@ The driver side of the DMA objects is on the [Memory](memory.md) page: frames fr
 ## What a tenant sees
 
 - A virtio MMIO bus with the devices the runtime attached: `/dev/vda` and its partitions, `hvc0`, `/dev/hwrng`, `eth0`, `/dev/vsock`. `lspci` shows nothing, since there is no PCI.
-- Device performance is the device thread's plus one worker wakeup per interrupt, which the Evaluation chapter measures against virtio in a microVM.
+- Device performance is the device thread's plus one upcall per interrupt, taken on the bound carrier where it stands rather than by waking a task, which the Evaluation chapter measures against virtio in a microVM.
 - A block request above `max_request_bytes` fails with `EIO`. The tree's ext2 builds one segment per contiguous extent with no size cap (checked: `fs_impls/ext2/inode/file.rs`, `read_direct_blocks`), so a large direct read of a contiguous file can hit the bound; the default is chosen so that it does not for ordinary files, and it is a policy.
 - A driver that hands a device a buffer it does not own gets an I/O error, or, when the unowned buffer is the status byte itself, a request that never completes.
 - A device's registers cannot be mapped into a process, and no device offers memory to map.
@@ -106,8 +106,8 @@ The driver side of the DMA objects is on the [Memory](memory.md) page: frames fr
 
 - Per register access: the crossing, its prologue and epilogue, and the hook's dispatch, *estimated* at 60 cycles over the 35-cycle measured crossing ([service half](../kernelet-api-service.md)); a virtio driver makes a handful per request outside the notify.
 - Per notify: the available-ring walk under the device lock and `guest_memory`, bounded by the queue size, and one device-thread wakeup.
-- Per completion: the used-ring write under `guest_memory`, one `raise_irq`, one worker wakeup, the driver's two register crossings to read and acknowledge the interrupt status, and, for block, the kernel proper's own hop to the thread that drives its request queue (checked on the tree: `device/registry/block.rs`), a park and an unpark.
-- Per device: one host kernel thread with its 512 KiB stack, one model struct, the inbox of queue-size slots, and the host objects behind the backend, charged at attach.
+- Per completion: the used-ring write under `guest_memory`, one `raise_irq` and its kick, one redirect on the bound carrier, the driver's two register crossings to read and acknowledge the interrupt status, and, for block, the kernel proper's own hop to the thread that drives its request queue (checked on the tree: `device/registry/block.rs`), a park and an unpark.
+- Per device: one host kernel thread with its host stack, one model struct, the inbox of queue-size slots, and the host objects behind the backend, charged at attach.
 - Per request: bounded host memory, charged.
 
 ## The second version

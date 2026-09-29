@@ -59,8 +59,9 @@ pub struct KerneletId { pub slot: u16, pub generation: NonZeroU32 }
 
 /// Build-time bound on live kernelets; sizes the slot table. Chosen, not measured.
 pub const MAX_KERNELETS: usize = 4096;
-/// A task's name inside its kernelet: an index into the kernelet's task table.
-pub type TaskName = u32;
+/// A virtual CPU's index inside its kernelet. There is no task name: a kernelet's tasks
+/// are its own objects and the host never learns that one exists.
+pub type VcpuId = u16;
 ```
 
 ## Configuration
@@ -75,9 +76,10 @@ pub struct KerneletConfig {
     /// is the set's size. Fixed for the kernelet's life. At most `MAX_VCPUS` (64), so
     /// that a virtual-CPU set is one `u64` on the wire.
     pub cpus: CpuSet,
-    /// The most live tasks the kernelet may have. Each is a host kernel thread with a
-    /// 512 KiB stack in host memory, charged to the kernelet's host-overhead account,
-    /// so this bound is what keeps a kernelet's host footprint bounded (register D64).
+    /// The most live tasks the kernelet may have. Each costs a kernelet stack from the
+    /// sandbox's own pool, charged to it, so this bound is what keeps a kernelet's stack
+    /// footprint bounded (register D64). It no longer bounds any host table: the host has
+    /// no object per kernelet task ([Tasks](virtualizing-ostd/tasks.md#stacks)).
     pub max_tasks: u32,
     /// Memory, in 2 MiB grains: granted at creation, and the most the kernelet may
     /// take by itself. `grant` raises both.
@@ -92,11 +94,14 @@ pub struct KerneletConfig {
 }
 
 pub struct CpuBudget {
-    /// Applied as the `nice` value of every thread of the kernelet. The host's scheduler has
-    /// no groups and no bandwidth control: its fair class knows per-thread `nice` weights and
-    /// per-thread affinity only (checked on the tree: `kernel/core/src/sched/sched_class/fair.rs`),
-    /// so this is a per-thread weight, not a share for the sandbox as a whole, and a sandbox
-    /// with more runnable threads gets more of the machine, as on Linux without cgroups.
+    /// Applied as the `nice` value of each of the kernelet's carriers. The host's scheduler
+    /// has no groups and no bandwidth control: its fair class knows per-thread `nice` weights
+    /// and per-thread affinity only (*checked on the tree*: `kernel/core/src/sched/sched_class/fair.rs`),
+    /// so a sandbox's share is the sum of its carriers' and two sandboxes at the same `nice`
+    /// with two and eight virtual CPUs get one share against four. A group scheduler in the
+    /// host is a named prerequisite for proportional share, and until it exists the property
+    /// is not held here ([Scheduling](virtualizing-ostd/scheduling.md)). What the carrier
+    /// model does buy is that a tenant's *thread count* no longer buys machine share.
     pub nice: i8,
     /// Hard cap: at most `quota_us` of CPU time per `period_us`, over all its tasks. `None` is
     /// uncapped. Enforced by OSTD's own throttle, not the scheduler: the host tick charges the
@@ -114,7 +119,7 @@ pub struct DeviceDesc {
     pub kind: DeviceKind,      // `VirtioMmio { device_type: u32 }` for now
     pub reg_bytes: u32,        // size of the register window, a multiple of 4 KiB
     pub irq: Virq,             // the virtual interrupt line the device raises
-    pub vcpu: u16,             // the virtual CPU whose worker delivers it; 0 if unbound
+    pub vcpu: u16,             // the virtual CPU whose carrier takes its upcall; 0 if unbound
     pub mmio_base: u64,        // the pseudo-physical address the kernelet's bus probe finds it at
 }
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)] pub struct DeviceId(pub u16);
@@ -157,9 +162,6 @@ pub trait KerneletHooks: Send + Sync + 'static {
     /// only tasks that are the kernel proper's threads (its class scheduler begins with
     /// `task.as_thread()?`; checked on the tree: `kernel/core/src/sched/sched_class/mod.rs`),
     /// and OSTD cannot make a `Thread`, so the endovisor makes it: `ThreadOptions::new(move || body.run())`
-    /// with the hints, not yet running. `body` is opaque to the endovisor; `run` is the
-    /// trampoline that loads the kernelet's page table and enters `run_task` (register D61).
-    fn spawn_task(&self, k: &Kernelet, body: KerneletTaskBody, hints: SpawnHints) -> Result<Arc<Task>, SpawnError>;
 
     /// A read of `width` bytes (1, 2, 4 or 8) at `offset` in device `dev`'s register file.
     fn mmio_read(&self, k: &Kernelet, dev: DeviceId, offset: u32, width: u8) -> u64;
@@ -177,7 +179,7 @@ pub trait KerneletHooks: Send + Sync + 'static {
     fn on_grant_exhausted(&self, k: &Kernelet) -> u32 { 0 }
 
     /// A task of the kernelet took an oops (a caught panic); the budget has been charged.
-    fn on_oops(&self, k: &Kernelet, task: TaskName, message: &str) {}
+    fn on_oops(&self, k: &Kernelet, vcpu: VcpuId, message: &str) {}
     /// The kernelet has entered `Dying`. Called once, on the reaper task; must not block.
     /// The host kernel has no I/O cancellation (a file or socket operation on the tree runs
     /// to completion on the caller's task), so what the endovisor does here is shut down or
@@ -194,10 +196,7 @@ pub enum LogLevel { Emerg, Alert, Crit, Error, Warn, Notice, Info, Debug, Consol
 /// The body of a kernelet task, opaque to the endovisor: the kernelet, the entry index and
 /// the argument. `run` never returns: it activates the kernelet's kernel page table, enters
 /// `EntryTable::run_task(entry, arg)`, and the task ends with `task_exit`.
-pub struct KerneletTaskBody { /* OSTD-private */ }
-impl KerneletTaskBody { pub fn run(self) -> !; }
-pub struct SpawnHints { pub vcpus: CpuSet, pub nice: i8, pub suspended: bool }
-pub enum SpawnError { NoMemory, TooManyThreads }
+pub enum SpawnError { NoMemory, TooManyThreads }   // creating a carrier, at `start` only
 ```
 
 **What a hook may call.** Inside a hook, these methods of `Kernelet` are safe: `id`, `state`, `config`, `stats`, `guest_memory`, `raise_irq`, `charge_host_bytes`, `uncharge_host_bytes`, `adopt_current_task` and `disown_current_task`. A device that completes at once, an entropy source, may raise its interrupt from inside `mmio_write`; every other completion is the device thread's ([Devices](virtualizing-ostd/devices.md)). These are not: `grant`, `kill`, `wait_exited` and `destroy`, which either take the state word the hook's caller holds or block on the task the hook is running on.
@@ -255,23 +254,26 @@ impl Kernelet {
     /// page and the task records); the initial grant of `initial_grains` grains, zeroed,
     /// addressable through the host's linear map, with their metadata frames mapped into `KW_META`, recorded in
     /// the grant table and the owner array ([Memory](virtualizing-ostd/memory.md)); the
-    /// device table; and, through the `spawn_task` hook, one worker thread per virtual CPU
-    /// (`run_task(1, vcpu)`, suspended) and the boot thread (`_kernelet_entry`), all
-    /// created but not runnable. Fails, with everything undone, on any error.
+    /// device table; and one **carrier** per virtual CPU, each a host kernel thread owning
+    /// the sandbox's `Vmar` so that the host's own post-schedule handler restores its
+    /// page-table root (register D123), carrier 0 entering at `_kernelet_entry` and the
+    /// rest at `vcpu_entry`, all created but not runnable. Fails, with everything undone,
+    /// on any error.
     pub fn create(config: KerneletConfig, hooks: Arc<dyn KerneletHooks>) -> Result<Arc<Kernelet>, CreateError>;
 
     pub fn id(&self) -> KerneletId;
     pub fn state(&self) -> KerneletState;
     pub fn config(&self) -> &KerneletConfig;
 
-    /// `Created → Running`: the boot task becomes runnable and enters `_kernelet_entry`
-    /// on the kernelet's kernel page table; it unparks the workers once its tables exist,
-    /// so a `raise_irq` before then waits as a pending bit ([The rest](virtualizing-ostd/the-rest.md)).
+    /// `Created → Running`: carrier 0 becomes runnable and enters `_kernelet_entry`; it
+    /// releases the secondary carriers once its tables exist, so a `raise_irq` before then
+    /// waits as a pending bit ([The rest](virtualizing-ostd/the-rest.md)).
     pub fn start(&self) -> Result<(), StateError>;
 
     /// Adds `grains` to the grant and to `max_grains` as one run if it can and as several
     /// otherwise, maps them and their metadata into the window, appends them to the grant
-    /// table, and posts `JOB_GRANT` so that the kernelet adds them to its allocator. Legal
+    /// table, and sets the grant bit in a virtual CPU's record and kicks its carrier, so
+    /// that the kernelet adds them to its allocator at its next upcall. Legal
     /// in `Created` and `Running`.
     /// Memory only grows; a kernelet returns memory by exiting. Every grain is zeroed
     /// before it is published (register D55), so no tenant's data reaches another.
@@ -279,8 +281,9 @@ impl Kernelet {
 
     pub fn set_budget(&self, budget: CpuBudget) -> Result<(), StateError>;
 
-    /// Injects a virtual interrupt: sets the line's pending bit and wakes the worker
-    /// of the virtual CPU the line is bound to. Idempotent while the line is pending.
+    /// Injects a virtual interrupt: sets the line's bit in the record of the virtual CPU
+    /// the line is bound to and kicks its carrier, which takes it at its next trap return
+    /// or wakes from `vcpu_idle`. Idempotent while the line is pending.
     /// Legal in `Running`; hook-safe.
     pub fn raise_irq(&self, virq: Virq) -> Result<(), StateError>;
 
@@ -380,7 +383,7 @@ The fields of `Kernelet`, listed so that the destroy sequence can be checked aga
 | `roots` | the user page-table roots the kernelet has registered, each with its active set of CPUs | the service half |
 | `budget`, `throttle` | the `nice` applied to the kernelet's threads; the quota's period accounting and the `throttled` flag every task's quiescent points read | `create`, `set_budget`, the host tick |
 | `timer_deadlines: [AtomicU64; MAX_VCPUS]`, tick-list membership | the per-virtual-CPU `timer_arm` deadlines, and whether the host tick posts to this kernelet | `timer_arm`; `start` and `mark_dying` |
-| `tasks` | the kernel threads that are this kernelet's tasks, by name, each an `Arc<Task>` the `spawn_task` hook returned, with its stack charged to the host-overhead account; the boot task and the workers among them, with each worker's virtual CPU; at most `max_tasks` live | the service half's spawn and exit |
+| `carriers` | one `Arc<Task>` per virtual CPU, each a host kernel thread the endovisor created at `create`, with the sandbox's `Vmar` and its `nice` and affinity; **`num_vcpus` of them, not one per kernelet task**, and the kernelet's own tasks appear here not at all. Their stacks are host thread stacks; the kernelet's task stacks are a pool charged to the sandbox, at most `max_tasks` live | the service half's spawn and exit |
 | `devices`, `virq_pending: [AtomicU64; 4]` | the device table and the pending-interrupt bitmap | creation; `raise_irq`; `job_wait` clears a bit when it hands the job over |
 | `shared` | the frames mapped read-only (`BootArgs`, the info page) and read-write (the task records and the per-virtual-CPU records) into `KW_SHARED` | creation; the scheduler writes task records |
 | `accounts` | the counters behind `stats()`, the host-bytes charge, and the host-overhead account | the service half, the host tick, the hooks |
@@ -404,7 +407,7 @@ Per hook call, the endovisor pays whatever its device model does; the control ha
 - **Memory only grows** (register A1). Reclaiming memory from a running kernelet needs its cooperation, a balloon, and a story for pages the kernelet has mapped to user space; none of that is needed to give every agent a sandbox that exits when it is done.
 - **Device models live in the endovisor, not in OSTD** (register D6). OSTD knows a device only as a register window and an interrupt line, because a device model over host files and sockets is Linux functionality, written in the safe-Rust kernel proper, not in OSTD's `unsafe`-bearing framework.
 - **The host maps every grain and its metadata into the window when it grants the grain** (register D58, on the [Memory](virtualizing-ostd/memory.md) page). The kernelet writes no page-table entry of the window.
-- **A kernelet's tasks are the host kernel proper's threads, created through the `spawn_task` hook** (register D61). The alternative, OSTD creating bare host `Task`s, produces tasks the host's class scheduler never enqueues, since it dispatches on `as_thread()`; teaching the scheduler a second kind of task is more code in the kernel proper for less. The cost is one `Thread` object per kernelet task and one hook call per spawn, which is not a hot path.
+- **A kernelet's tasks are its own, and the host schedules one carrier per virtual CPU** (register D116; it retires D61 and the `spawn_task` hook). The alternative is what this chapter said before, one host thread per kernelet task, which makes the kernel proper's scheduler inert and makes a tenant's thread count a host resource. The objection D61 answered, that OSTD cannot make a `Thread` and so bare host `Task`s are invisible to the host's class scheduler never enqueues, since it dispatches on `as_thread()`; teaching the scheduler a second kind of task is more code in the kernel proper for less. The cost is one `Thread` object per kernelet task and one hook call per spawn, which is not a hot path.
 - **The CPU quota is a throttle in OSTD; the weight is a per-thread `nice`** (register D62). The host has no group scheduler; building one is a scheduler project, not a sandbox one. The throttle costs one compare at every quiescent point and gives up proportional sharing between sandboxes.
 - **Hooks run on a per-CPU host stack under `catch_unwind`** (register D63). The alternative, running them on the kernelet task's stack, makes the depth of the endovisor's Linux code a tenant-reachable machine halt whenever the stack reserve is wrong, and makes a panic in the endovisor's fresh code a machine halt; the stack switch costs about ten cycles and the landing pad nothing.
-- **`max_tasks` bounds a kernelet's threads, and their stacks are charged** (register D64). Without it a sandbox could take 512 KiB of host memory per thread without limit.
+- **`max_tasks` bounds a kernelet's tasks, and their stacks are charged** (register D64, kept with a new object: the sandbox's own stack pool rather than host thread stacks). Without it a sandbox could take host memory per task without limit.

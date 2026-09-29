@@ -14,28 +14,27 @@ A service function takes no kernelet or task argument. The host learns both from
 // ostd::kernelet::abi — read by both builds; written only by the host scheduler.
 #[repr(C)]
 pub struct CpuSlot {
-    /// The kernelet whose task is running on this CPU, or `NONE`.
+    /// The kernelet whose carrier is running on this CPU, or `NONE`.
     pub kernelet: u16,        // slot index
-    pub vcpu: u16,            // this CPU's index in the kernelet's CPU set
-    pub task: u32,            // the running task's name, `TaskName`
+    pub vcpu: u16,            // the carrier's virtual CPU
     pub generation: u32,      // the kernelet's generation, so a stale slot is detected
-    pub _reserved: u32,
+    pub _reserved: u64,
 }
 ```
 
-The slot lives in the host's per-CPU storage at an offset published in `BootArgs::cpu_slot_gs_offset`; vOSTD reads it with one GS-relative load through a small inline-assembly helper, `mov rax, gs:[reg]` with the offset in a register, since the tree's `cpu_local_cell!` macro emits an immediate offset it cannot know here (checked on the tree: `ostd/src/arch/x86/cpu/local.rs`). The kernelet never writes the slot; it is host memory. Reading `task` needs no preemption guard: a task that migrates reads its own name on the new CPU. Reading `vcpu` requires preemption disabled, as every per-CPU read does, and the host's kernel-mode preemption honors the kernelet's preemption count ([Tasks](virtualizing-ostd/tasks.md)).
+The slot lives in the host's per-CPU storage at an offset published in `BootArgs::cpu_slot_gs_offset`; vOSTD reads it with one GS-relative load through a small inline-assembly helper, `mov rax, gs:[reg]` with the offset in a register, since the tree's `cpu_local_cell!` macro emits an immediate offset it cannot know here (checked on the tree: `ostd/src/arch/x86/cpu/local.rs`). The kernelet never writes the slot; it is host memory. Reading `vcpu` is safe because a carrier does not migrate between virtual CPUs: it *is* one, for the sandbox's life.
 
-A **task name** is a `u32` of two halves, `index:16 | generation:16`. The index selects the task's record; the generation distinguishes a reuse of the index, so that a late `task_unpark` with a stale name fails with `-INVALID` instead of waking a stranger. A kernelet may have at most `config.max_tasks` live tasks, and never more than 65,536; retired indices are reused with the next generation. Names, not pointers, are what cross (invariant I4).
+**No task name crosses, because no task does.** A kernelet's tasks are its own objects, invisible to the host ([Tasks, virtual CPUs, and carriers](virtualizing-ostd/tasks.md)), so the `TaskName` space, its index-and-generation encoding and the eight services that took a name are all gone. What the host names is a **carrier**, by its virtual CPU, and `config.max_tasks` now bounds the sandbox's stack pool rather than a host table.
 
-## Host-private per-task state
+## Host-private per-carrier state
 
-The state on which termination depends is host memory a kernelet cannot address. Each host task that belongs to a kernelet carries:
+The state on which termination depends is host memory a kernelet cannot address. Each carrier carries:
 
 ```rust
-// Inside the host's `Task`, only for kernelet tasks. Host memory.
-pub(crate) struct KerneletTaskState {
+// Inside the host's `Task`, only for carriers. Host memory.
+pub(crate) struct KerneletCarrierState {
     pub kernelet: KerneletId,
-    pub name: TaskName,
+    pub vcpu: u16,
     /// 0 while in kernelet code, 1 while inside a service call. Written by the service
     /// prologue and epilogue with `Release`; read by the kill and tick paths with `Acquire`.
     /// This is invariant I7's counter, and it is host-private so that no kernelet can
@@ -124,57 +123,52 @@ pub struct InfoPage {
 }
 ```
 
-**The task records**, read-write, `max_tasks` records of 64 bytes at `KW_SHARED + task_records`, indexed by the task name's index half. The task records and the per-virtual-CPU records below are the only shared pages a kernelet writes, and nothing on them can harm another kernelet or block a kill: a corrupted `preempt_count` delays only that kernelet's own preemption until the tick budget kills it; a corrupted mirror only blinds the kernelet to its own state.
+**The per-task records are gone.** There were `max_tasks` of them, one per task name, and with no host-visible tasks there is nothing to index. Their two live fields move into the per-virtual-CPU record below, which is now the only shared page a kernelet writes: the preemption count becomes the carrier's `guards`, and the fault address and code become the carrier's, because a kernel-mode fault in a user copy happens on whichever carrier was running.
 
-```rust
-#[repr(C, align(64))]
-pub struct TaskRecord {
-    /// Written by the kernelet: its preemption-disable count for this task. Read by the
-    /// host's kernel-mode preemption point to decide whether the task may be switched out.
-    pub preempt_count: AtomicU32,
-    /// A read-only mirror, for the kernelet, of the host-private flags NEED_RESCHED,
-    /// DYING and CANCEL_PARK; the host writes it whenever it writes the private copy.
-    pub flags_mirror: AtomicU32,
-    /// Written by the host's page-fault handler before it jumps to an exception-table
-    /// recovery address: the faulting address and error code, for the kernelet's retry
-    /// loop ([User mode](virtualizing-ostd/user-mode.md)).
-    pub fault_addr: AtomicU64, pub fault_code: AtomicU32,
-    pub _reserved: [u32; 11],
-}
-```
-
-**The per-virtual-CPU records**, read-write, `num_vcpus` records of 64 bytes at `KW_SHARED + vcpu_records`. The host tick writes, the kernelet consumes:
+**The per-virtual-CPU records**, read-write, `num_vcpus` records of 64 bytes at `KW_SHARED + vcpu_records`. Both sides write, and nothing on them can harm another kernelet or block a kill: corrupt `guards` and the kernelet delays only its own preemption until the cooperation bound yields it; corrupt the pending bits and it blinds only itself.
 
 ```rust
 #[repr(C, align(64))]
 pub struct VcpuRecord {
-    /// Ticks the host has taken on this virtual CPU's host CPU while a task of the kernelet
-    /// was running, not yet consumed by the kernelet: a count in the low 31 bits, and bit 31
-    /// set if the most recent one found the task in user mode. The host adds; the kernelet's next
-    /// task on this virtual CPU swaps it to zero at a tick point and runs the tick
-    /// callbacks that many times ([Interrupts and time](virtualizing-ostd/interrupts-and-time.md)).
+    /// Pending virtual interrupts, set by the host with `Release`, consumed by the upcall
+    /// stub with `Acquire` ([Interrupts and time](virtualizing-ostd/interrupts-and-time.md)):
+    /// a tick count, a kick bit, and one bit per device line.
     pub tick_pending: AtomicU32,
-    /// Set by the host when it parks the virtual CPU's worker with no runnable task of the
-    /// kernelet on that CPU, cleared by the kernelet at its next switch point there: the RCU
-    /// extended quiescent state ([Tasks](virtualizing-ostd/tasks.md)).
+    pub kick: AtomicU32,
+    pub lines: AtomicU64,
+    /// Written by the kernelet, read by the host's redirect gate: the count of guards held
+    /// and the virtual interrupt flag. Two fields, not one: a single count would mean a
+    /// kernelet holding a spin lock received no ticks ([Scheduling](virtualizing-ostd/scheduling.md#upcall)).
+    pub guards: AtomicU32,
+    pub irq_off: AtomicU32,
+    /// Written by the host at the trap it redirects: the privilege it interrupted. The stub
+    /// cannot derive it, because the redirect only ever rewrites kernel-mode frames.
+    pub sampled_privilege: AtomicU32,
+    /// Written by the host's page-fault handler before it jumps to an exception-table
+    /// recovery address ([User mode](virtualizing-ostd/user-mode.md)).
+    pub fault_addr: AtomicU64, pub fault_code: AtomicU32,
+    /// The RCU extended quiescent state: set by the kernelet as it enters `vcpu_idle`,
+    /// cleared as it leaves ([Tasks](virtualizing-ostd/tasks.md)).
     pub quiescent: AtomicU32,
-    pub _reserved: [u32; 14],
 }
 ```
 
 ## The entry table
 
-Read by the host from `KW_TEXT + 4 KiB` of the kernelet image at registration ([Builds and images](builds-and-images.md#entry)). The host executes kernelet code in exactly two ways: the boot task's trampoline calls `_kernelet_entry`, the ELF entry point, once; every other task's trampoline calls `run_task`. Both at service-call depth zero, on a fresh task.
+Read by the host from `KW_TEXT + 4 KiB` of the kernelet image at registration ([Builds and images](builds-and-images.md#entry)). The host executes kernelet code in exactly three ways: carrier 0 calls `_kernelet_entry`, the ELF entry point, once; every other carrier calls `vcpu_entry` once; and a running carrier is **redirected** to one of three stubs at a trap return ([Scheduling](virtualizing-ostd/scheduling.md#upcall)). The first two are at service-call depth zero on a fresh carrier; the third is at a point the host's gate has checked.
 
 ```rust
 #[repr(C)]
 pub struct EntryTable {
     pub size: u32,
-    /// The body of a spawned task. Called by the host's task trampoline on a fresh task,
-    /// on the kernelet's kernel page table, with `entry` and `arg` from the spawn.
-    /// `entry == 1` is reserved: it is the worker body, and `arg` is its virtual CPU;
-    /// the host spawns one at creation per virtual CPU. Never returns: it ends with `task_exit`.
-    pub run_task: extern "C" fn(entry: u32, arg: u64) -> !,
+    /// Where a secondary carrier enters, once, with its virtual CPU index. Never returns.
+    pub vcpu_entry: extern "C" fn(vcpu: u64) -> !,
+    /// The three redirect targets. The host points a carrier's interrupted frame at one of
+    /// them and lets the `iretq` land there; each returns to where the carrier was, or, for
+    /// the last two, does not return. Their ranges are published so that the gate can refuse
+    /// to redirect a carrier that is already inside one.
+    pub virq_entry: u64, pub yield_entry: u64, pub exit_entry: u64,
+    pub stub_range_start: u64, pub stub_range_end: u64,
     /// Bounds of the image's exception table, for kernel-mode faults in user copies
     /// ([User mode](virtualizing-ostd/user-mode.md)). Both inside `KW_TEXT`.
     pub ex_table_start: u64, pub ex_table_end: u64,
@@ -185,7 +179,7 @@ pub struct EntryTable {
 }
 ```
 
-Every entry index above 1 names a closure the kernelet stored in its own heap before calling `task_spawn` ([Tasks](virtualizing-ostd/tasks.md)); the host never sees the closure, only the index (invariant I5).
+There are no entry indices and no closure table. A kernelet spawns its own tasks in its own heap, and the host never learns that one exists, which is invariant I5 discharged by construction rather than by an indirection.
 
 ## The service table
 
@@ -202,18 +196,11 @@ pub struct ServiceTable {
     pub tlb_shootdown: extern "C" fn(root_paddr: u64, start: u64, len: u64) -> i32,
 
     // Tasks
-    pub task_spawn: extern "C" fn(entry: u32, arg: u64, vcpu_mask: u64, nice: i32, flags: u32) -> i64,
-    pub task_exit: extern "C" fn() -> !,
-    pub task_destroy: extern "C" fn(name: u32) -> i32,
-    pub task_yield: extern "C" fn(),
-    pub task_park: extern "C" fn() -> i32,
-    pub task_unpark: extern "C" fn(name: u32) -> i32,
-    pub task_set_nice: extern "C" fn(name: u32, nice: i32) -> i32,
-    pub task_set_vcpus: extern "C" fn(name: u32, vcpu_mask: u64) -> i32,
+    /// Sleep this carrier until the earliest of `deadline_ns`, a virtual interrupt, or a
+    /// kick; `u64::MAX` means no deadline ([Interrupts and time](virtualizing-ostd/interrupts-and-time.md#idle)).
+    pub vcpu_idle: extern "C" fn(deadline_ns: u64) -> i32,
 
-    // Jobs and time
-    pub job_wait: extern "C" fn() -> i64,
-    pub timer_arm: extern "C" fn(vcpu: u32, deadline_ns: u64) -> i32,
+
 
     // User mode
     pub user_run: extern "C" fn(ctx: *mut RawUserContext) -> i32,
@@ -231,25 +218,18 @@ pub struct ServiceTable {
 /// Returned in two registers under the C ABI; no pointer crosses.
 #[repr(C)] pub struct MmioResult { pub status: i64, pub value: u64 }
 
-// `job_wait` returns a job packed in an `i64`: the kind in bits 0..8 and the argument above.
-// JOB_VIRQ: the line. JOB_GRANT: no argument. JOB_TICK: an idle tick, with the count of ticks
-// coalesced; a busy virtual CPU's ticks never come here but through `VcpuRecord::tick_pending`
-// ([Interrupts and time](virtualizing-ostd/interrupts-and-time.md)).
-pub const JOB_VIRQ: i64 = 1; pub const JOB_TICK: i64 = 2; pub const JOB_GRANT: i64 = 3;
-
 // Error codes: negative return values.
 pub const NOT_OWNED: i32 = 2; pub const INVALID: i32 = 3;   // 1 is unused: a dying kernelet's call never returns
 pub const LIMIT: i32 = 4; pub const STATE: i32 = 5; pub const CANCEL: i32 = 6;
 
-// `task_spawn` flags, `log_write` levels beyond the log crate's, and `stop` kinds.
-pub const SPAWN_SUSPENDED: u32 = 1;   // created but not runnable until `task_unpark`
+// `log_write` levels beyond the log crate's, and `stop` kinds.
 pub const LEVEL_CONSOLE: u8 = 8;      // bytes from the early console, no module
 pub const STOP_EXIT: u32 = 0; pub const STOP_PANIC: u32 = 1; pub const EXIT_RESTART: u32 = 1 << 31;
 ```
 
 Twenty-one functions. Return values are `0` or a positive count on success and `-code` on failure: `-NOT_OWNED` (a physical address outside the grant), `-INVALID` (a bad name, index, width or pointer), `-LIMIT` (a quota or `max_grains` reached), `-STATE` (the call is not legal now, including a sleeping call with preemption disabled), `-CANCEL` (a park cut short by a kill).
 
-**Pointer arguments.** Four functions take pointers, and no function returns a value through one: results come back in registers (`MmioResult`, the packed job of `job_wait`, the name of `task_spawn`), because a host store through a kernelet-chosen pointer is a store the kernelet can make fault by unmapping the page beneath it, and a range check cannot prevent that. `ctx` is the one pointer the host writes through, and it must lie on the calling task's own kernel stack, host memory the kernelet cannot unmap, above the stack pointer at entry plus the host's own frame headroom and below the stack's top, so that it overlaps no host frame (the kernel proper keeps its `UserMode` as a local of the task's entry closure; checked on the tree: `kernel/core/src/thread/task.rs`). The three read-only pointers (`module`, `text`, `msg`) may lie in the image's regions or in a granted frame reached through the host's linear map, and the host reads them only with its fallible copy routines, whose exception-table entries the host's fault handler consults first for a kernelet task at any address ([User mode](virtualizing-ostd/user-mode.md)), so an unmapped page beneath them is `-INVALID`, not a host fault. Every pointer is used only during the call; the host copies what it needs and keeps no pointer afterward (invariant I4). This is the one class of host access to a kernelet's memory besides `guest_memory` on the control half, and both are bounded by a call.
+**Pointer arguments.** Four functions take pointers, and no function returns a value through one: results come back in registers (`MmioResult` among them), because a host store through a kernelet-chosen pointer is a store the kernelet can make fault by unmapping the page beneath it, and a range check cannot prevent that. `ctx` is the one pointer the host writes through, and it must lie on the calling task's own kernel stack, host memory the kernelet cannot unmap, above the stack pointer at entry plus the host's own frame headroom and below the stack's top, so that it overlaps no host frame (the kernel proper keeps its `UserMode` as a local of the task's entry closure; checked on the tree: `kernel/core/src/thread/task.rs`). The three read-only pointers (`module`, `text`, `msg`) may lie in the image's regions or in a granted frame reached through the host's linear map, and the host reads them only with its fallible copy routines, whose exception-table entries the host's fault handler consults first for a kernelet task at any address ([User mode](virtualizing-ostd/user-mode.md)), so an unmapped page beneath them is `-INVALID`, not a host fault. Every pointer is used only during the call; the host copies what it needs and keeps no pointer afterward (invariant I4). This is the one class of host access to a kernelet's memory besides `guest_memory` on the control half, and both are bounded by a call.
 
 ### The prologue and epilogue every function shares
 
@@ -301,20 +281,16 @@ The depth is stored only after every check has passed, so no error return leaves
 
 Every page-table entry of the window is written by the host when it grants a grain; nothing here maps anything ([Memory](virtualizing-ostd/memory.md)).
 
-### Tasks
+### Processors
 
-- `task_spawn(entry, arg, vcpu_mask, nice, flags) -> name`: asks the endovisor, through `KerneletHooks::spawn_task`, for a host kernel thread whose body is the trampoline that loads the kernelet's kernel page table and calls `EntryTable::run_task(entry, arg)`, with a fresh 512 KiB kernel stack (measured on the tree) charged to the kernelet's host-overhead account, with affinity the host CPUs of the virtual CPUs in `vcpu_mask` and the given `nice`, and makes it runnable unless `SPAWN_SUSPENDED`; the insertion into the task table re-checks `dying` under the table's lock, and the trampoline checks `DYING` before entering `run_task`, so a task spawned during a kill never runs kernelet code. *Checks:* `entry > 1`; fewer than `max_tasks` live tasks, else `-LIMIT`; `vcpu_mask` a nonempty subset of the CPU set. *Cost:* the hook, a kernel stack, a `Task` and a `Thread`, as `ThreadOptions::spawn` today, plus one record initialization.
-- `task_exit() -> !`: the current task ends. The host removes it from the task table before switching away, and the reaper task frees the task object and its stack afterward ([Faults, termination, and reclamation](faults-and-reclamation.md)); the index is retired and its generation advanced. No kernelet destructor runs on the host's behalf.
-- `task_destroy(name)`: ends a task that was spawned `SPAWN_SUSPENDED` and never unparked, freeing its stack; `-STATE` if it has ever run. *Cost:* the reap.
-- `task_yield()`: the current task yields, as `Task::yield_now` does on the host.
-- `task_park() -> 0 | -CANCEL`: parks the current task until `task_unpark(name)` or a cancellation. A park token is remembered: an unpark that arrives while the task is running sets `PARK_TOKEN`, and the next park consumes it and returns at once, so no wakeup is lost between a wait queue's enqueue and its park, which is the rule OSTD's own `park_current(has_unparked)` enforces today. A park that finds `CANCEL_PARK` set, or is interrupted by `kill`, returns `-CANCEL`; the epilogue then terminates the task.
-- `task_unpark(name)`: makes the named task runnable if parked, or sets its token if running. *Checks:* the name's index and generation are this kernelet's and live. *Cost:* the scheduler's enqueue.
-- `task_set_nice(name, nice)`, `task_set_vcpus(name, vcpu_mask)`: the kernelet's say over its own threads, applied through the kernel proper's own per-thread scheduling attributes; the host scheduler decides across sandboxes by the same attributes ([Tasks](virtualizing-ostd/tasks.md)).
+Eight services and one hook left this group, because a kernelet's tasks are no longer the host's: `task_spawn`, `task_exit`, `task_destroy`, `task_yield`, `task_park`, `task_unpark`, `task_set_nice`, `task_set_vcpus`, and the `spawn_task` hook behind the first. A spawn, an exit, a yield, a park and a wake are now operations on the kernelet's own run queue, at the cost the tree pays and with no crossing at all ([Tasks, virtual CPUs, and carriers](virtualizing-ostd/tasks.md)). `job_wait` goes with them: nothing is fetched, because the host pushes by redirecting the carrier.
 
-### Jobs and time
+What is left is one call, and it is the only one a carrier makes about itself:
 
-- `job_wait() -> job`: parks the calling task, which must be a worker, until a job for its virtual CPU is posted, then returns it packed in the result. Jobs are: a virtual interrupt (`JOB_VIRQ`, with the line number), an idle tick (`JOB_TICK`, with the count of ticks coalesced, posted only while the kernelet is idle or a `timer_arm` deadline passes), or a new grant to read from the grant table (`JOB_GRANT`). Delivery is edge-triggered: the host clears a line's pending bit when it hands the job over, so a `raise_irq` that arrives while the handler runs becomes the next job rather than being lost; a line raised twice before delivery is one job. When the host parks the worker and no task of the kernelet is runnable on that CPU, it sets the virtual CPU's `quiescent` bit. A kill does not return from `job_wait`: the parked worker is terminated in the epilogue like any parked task. *Checks:* the caller is a worker. *Cost:* a park and an unpark per job; the delivery latency of a virtual interrupt is therefore a wakeup, which the Evaluation chapter will measure.
-- `timer_arm(vcpu, deadline_ns)`: a one-shot: post `JOB_TICK` to the virtual CPU's worker at the first host tick at or after `deadline_ns` on the host's monotonic clock, or at once if past; a second call replaces the virtual CPU's deadline; `u64::MAX` cancels it. The busy tick needs no call: the host tick that finds a task of the kernelet running on a CPU adds to that virtual CPU's `tick_pending`, and the kernelet consumes it in task context at its next tick point ([Interrupts and time](virtualizing-ostd/interrupts-and-time.md)).
+- `vcpu_idle(deadline_ns) -> 0 | -CANCEL`: sleeps this carrier until the earliest of the deadline, a pending virtual interrupt, or a kick, and returns `-CANCEL` if the sandbox is dying. The kernelet sets its virtual CPU's `quiescent` bit before calling and clears it on return, which is what keeps an RCU grace period from stalling on a sleeping virtual CPU ([Interrupts and time](virtualizing-ostd/interrupts-and-time.md#idle)). *Checks:* none beyond the prologue's. *Cost:* the host's own idle path, and a wake.
+
+`timer_arm` is withdrawn. It existed to post an idle tick to a worker at a deadline; the deadline is now an argument of `vcpu_idle`, which is the same information carried on the call that sleeps rather than on a separate one-shot. Reporting it needs the kernel proper's timer wheel to say when its earliest pending expiry is, which is register D122, a prerequisite of OSTD on both hosts.
+
 
 ### User mode
 
@@ -337,7 +313,7 @@ There is no function to read or write host memory, to map anything outside the w
 ## What this page decides
 
 - **A flat function table, with the caller identified from the host's per-CPU slot** (register D7).
-- **Task records shared read-write carry only the preemption count and a read-only mirror of the flags** (register D8, revised). The termination counter and the host's flags are host-private, so a kernelet cannot make itself unkillable; what it can corrupt harms only itself.
-- **One worker per virtual CPU** (register D11), fetching virtual interrupts, grants and idle ticks by `job_wait`; the host never enters the entry table except at task start, which is what lets invariant I7's counter be a single bit per task. Per-virtual-CPU workers are what let the kernel proper's per-CPU interrupt and bottom-half code run on the virtual CPU it believes it is on; the busy tick is consumed by the interrupted virtual CPU's own tasks (register D66).
+- **One shared record per virtual CPU, carrying the pending interrupts one way and `guards` and `irq_off` the other** (register D8, revised again: there are no per-task records, because there are no host-visible tasks). The termination counter and the host's flags stay host-private, so a kernelet cannot make itself unkillable; what it can corrupt harms only itself.
+- **Virtual interrupts are pushed, by redirecting the carrier at a trap return** (register D117, this host's binding; it retires D9 and D11, the jobs and the workers). The host now enters the entry table at three stubs as well as at carrier start, and the gate that decides a redirect is what keeps invariant I7's counter a single bit per task. Per-virtual-CPU workers are what let the kernel proper's per-CPU interrupt and bottom-half code run on the virtual CPU it believes it is on; the busy tick is consumed by the interrupted virtual CPU's own tasks (register D66).
 - **No service call returns a value through a pointer** (register D65). Results come back in registers, because a host store through a pointer the kernelet chose is a store the kernelet can make fault; the three read-only pointers go through fallible copies. The price is a `MAX_VCPUS` of 64, so that a virtual-CPU set fits a register.
 - **Hooks do not sleep** (register D12). Device register accesses happen under drivers' spin locks; the endovisor's device models therefore do their host I/O on device threads that a notify wakes, and a hook is a bounded amount of state manipulation.

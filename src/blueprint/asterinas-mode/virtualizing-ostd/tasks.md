@@ -43,7 +43,7 @@ A kernelet's configuration names a set of host processors; its virtual CPU *i* i
 
 What changes with upcalls is the guard. `CpuLocalCell`'s single-instruction operations are `gs:`-relative read-modify-writes on the tree precisely so that their callers need no guard, and the earlier version of this page raised a preemption count around each of them to stop a *migration* between forming the address and using it. That is no longer sufficient, and the prototype found out why by hanging: **the kernelet's spin locks must take an interrupt guard, not a preemption guard.** The scheduler held its run-queue lock, the tick arrived as an upcall on that very task, the handler re-entered the run queue, and the virtual CPU deadlocked against itself (*measured on the booted Asterinas prototype*, finding F7). Once virtual interrupts are delivered by upcall a kernelet *does* run code in interrupt context, so the sentence "nothing in a kernelet runs in interrupt context" is withdrawn, and with it the aliasing of `irq::disable_local` to the preemption count that rested on it ([Interrupts and time](interrupts-and-time.md), register D18).
 
-## When a carrier dies
+## When a carrier dies {#death}
 
 A carrier is the unit of termination as well as of scheduling. Killing a sandbox parks every carrier at its next safe point and runs the exit stub on each; a carrier that will not leave kernelet code is the case the [bound](scheduling.md#cooperative) exists for. Because no kernelet task is a host task, *Exited* means **no carrier is in kernelet text** — not "no stack of the kernelet is in use anywhere", which named a host object that no longer exists ([Faults, termination, and reclamation](../faults-and-reclamation.md)).
 
