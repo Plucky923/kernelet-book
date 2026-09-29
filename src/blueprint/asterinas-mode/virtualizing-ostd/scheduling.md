@@ -70,7 +70,7 @@ A **group scheduler in the host kernel is therefore a named prerequisite** of th
 
 ## What this asks of OSTD {#asks}
 
-Additions, not host-specific ones — each is needed whichever kernel is the host: the trap-return redirect hook; `vcpu_idle` with a deadline, since `halt_cpu()` is the only idle primitive and takes no argument (register D122); the `might_preempt` checks above, in two `Drop` implementations, the four `arch::irq` primitives and three architectures' trap paths; an interrupt-stack-table entry for vector 8 ([Tasks](tasks.md#stacks)); and an extended quiescent set for RCU, since a grace period completes only when every processor has switched and a virtual CPU asleep in `vcpu_idle` passes no switch point.
+Additions, not host-specific ones — each is needed whichever kernel is the host (register D118): the trap-return redirect hook; `vcpu_idle` with a deadline, since `halt_cpu()` is the only idle primitive and takes no argument (register D122); the `might_preempt` checks above, in two `Drop` implementations, the four `arch::irq` primitives and three architectures' trap paths; an interrupt-stack-table entry for vector 8 ([Tasks](tasks.md#stacks)); and an extended quiescent set for RCU, since a grace period completes only when every processor has switched and a virtual CPU asleep in `vcpu_idle` passes no switch point.
 
 ## Costs
 
@@ -87,8 +87,8 @@ Additions, not host-specific ones — each is needed whichever kernel is the hos
 
 ## What this page decides {#decides}
 
-- **Virtual interrupts are delivered by redirecting a carrier at a trap return, under six conditions** (register D119; it retires D9 and D11, the worker jobs, and rewrites D16, which is no longer a task switch). **[unverified]** in one respect: the stack hand-off is exercised by this prototype and by no other, and the Linux prototype kept the interrupted instruction pointer in the record instead.
-- **The bound yields and is counted by the host** (register D120, replacing the kill). The alternative kills correct kernelets, because the bottom half's preemption-off region is not bounded by construction.
+- **Virtual interrupts are delivered by redirecting a carrier at a trap return, under six conditions** (register D117, this host's binding; it retires D9 and D11, the worker jobs, and rewrites D16, which is no longer a task switch. D119, Linux's mirrored preemption count, has no counterpart here: there is no mirror to build). **[unverified]** in one respect: the stack hand-off is exercised by this prototype and by no other, and the Linux prototype kept the interrupted instruction pointer in the record instead.
+- **The bound yields and is counted by the host** (register D124, new, replacing the kill of D66's half). The alternative kills correct kernelets, because the bottom half's preemption-off region is not bounded by construction.
 - **The quota parks the carriers** (register D62, kept with a new object). The alternative, refusing to enqueue, would have to live in the class scheduler rather than in OSTD.
 - **A group scheduler in the host kernel is a prerequisite for proportional share**, and until it exists the property is not held on this host.
 - **A8 stays**: that the host can reach its own voluntary switch from the trap-return path, for the yield stub. Nothing else in OSTD preempts a host kernel thread that computes.
