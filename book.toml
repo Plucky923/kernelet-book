@@ -6,6 +6,12 @@ description = "A design for many mutually distrusting tenant kernels inside one 
 
 [build]
 create-missing = false
+# Index pages are README.md, so that GitHub shows them when a directory is opened. mdBook's
+# default `index` preprocessor would render a README.md chapter as index.html while still
+# rewriting links to it as README.html, which would not exist; with it off, the page and every
+# link to it are README.html. `links` (the {{#include}} family) is the other default and is
+# turned back on below. The HTML renderer still writes index.html from the first chapter.
+use-default-preprocessors = false
 
 [output.html]
 default-theme = "navy"
@@ -19,6 +25,21 @@ copyable = true
 copy-js = true
 line-numbers = false
 runnable = false
+
+# URLs published before index pages were renamed README.md. A redirect at a directory's
+# index.html also makes the bare directory URL work.
+[output.html.redirect]
+"/executive-summary.html" = "README.html"
+"/blueprint/index.html" = "README.html"
+"/blueprint/overview/index.html" = "README.html"
+"/blueprint/design/index.html" = "README.html"
+"/blueprint/asterinas-mode/index.html" = "README.html"
+"/blueprint/asterinas-mode/virtualizing-ostd/index.html" = "README.html"
+"/blueprint/linux-mode/index.html" = "README.html"
+"/blueprint/linux-mode/virtualizing-ostd/index.html" = "README.html"
+"/notes/index.html" = "README.html"
+
+[preprocessor.links]
 
 [preprocessor.mermaid]
 command = "mdbook-mermaid"

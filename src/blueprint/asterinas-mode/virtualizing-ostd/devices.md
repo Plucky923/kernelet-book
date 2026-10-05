@@ -6,7 +6,7 @@ A kernelet sees devices the way a guest of a microVM does: virtio devices on an 
 
 ## Enumeration
 
-The virtio MMIO bus on x86-64 already probes devices from the kernel command line in Linux's `virtio_mmio.device=<size>@<base>:<irq>` form (checked on the tree: `transport/mmio/bus/arch/x86.rs`, `probe_from_kernel_cmdline`). The endovisor composes that line from the kernelet's device descriptors, and the kernelet's bus probe runs the same code with these `cfg` lines, which the [taxonomy](index.md) lists (checked on the tree, each):
+The virtio MMIO bus on x86-64 already probes devices from the kernel command line in Linux's `virtio_mmio.device=<size>@<base>:<irq>` form (checked on the tree: `transport/mmio/bus/arch/x86.rs`, `probe_from_kernel_cmdline`). The endovisor composes that line from the kernelet's device descriptors, and the kernelet's bus probe runs the same code with these `cfg` lines, which the [taxonomy](README.md) lists (checked on the tree, each):
 
 - `bus/arch/x86.rs`: `probe_from_microvm_constants`, which counts I/O APICs and scans QEMU's fixed MMIO window, is compiled out; the command-line probe's lookup of `IRQ_CHIP` is compiled out.
 - `bus/mod.rs`: `try_register_mmio_device`, which on the host allocates a free line with `IrqLine::alloc` and maps it through the caller's `IRQ_CHIP` closure into a `MappedIrqLine`, takes the line number from the command line and calls `IrqLine::alloc_specific(irq)` under the feature; `bus/common_device.rs` stores the result in its `irq` field, whose type `MappedIrqLine` the kernelet configuration aliases to `IrqLine`, as the LoongArch arch file already does.

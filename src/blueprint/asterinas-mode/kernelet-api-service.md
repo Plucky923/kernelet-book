@@ -2,7 +2,7 @@
 
 *Answers question 3: what API does OSTD expose to vOSTD, and how does a call cross from the kernelet image into the host?*
 
-The service half is what a kernelet gets from the host at run time. Its wire form, the **image ABI**, is two tables of `extern "C"` function pointers and a few shared pages; its implementation is the module `ostd::kernelet::service` in the host build. Every virtualized item on the [taxonomy](virtualizing-ostd/index.md) bottoms out in one of the functions on this page, and every function here is specified with its signature, what it checks, and what it costs. Invariants enforced here: I1 (reach), the service side of I2 (ownership), I4 (no retained reference), I5 (no closure crosses), I6 (charged work) and the counter behind I7 (termination).
+The service half is what a kernelet gets from the host at run time. Its wire form, the **image ABI**, is two tables of `extern "C"` function pointers and a few shared pages; its implementation is the module `ostd::kernelet::service` in the host build. Every virtualized item on the [taxonomy](virtualizing-ostd/README.md) bottoms out in one of the functions on this page, and every function here is specified with its signature, what it checks, and what it costs. Invariants enforced here: I1 (reach), the service side of I2 (ownership), I4 (no retained reference), I5 (no closure crosses), I6 (charged work) and the counter behind I7 (termination).
 
 The tables and the shared-page layouts are defined once, in a module compiled into both builds, `ostd::kernelet::abi`, with no `cfg` inside it, so the two sides cannot disagree on a field. Every error code and constant below is a named value in that module.
 

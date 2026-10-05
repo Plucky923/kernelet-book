@@ -1,6 +1,6 @@
 # Design for Linux
 
-*The same kernelets, with Linux as the host kernel. An operator keeps the kernel they already run, applies a small patch, loads one module, and selected workloads get a kernel of their own in safe Rust. This chapter is how Linux meets the host-independent design of [Design](../design/index.md): it carries what is Linux's, and links to that chapter for what is not. A prototype of its central mechanisms runs a kernel whose source is unchanged from the Asterinas tree, inside a patched Linux 6.12.*
+*The same kernelets, with Linux as the host kernel. An operator keeps the kernel they already run, applies a small patch, loads one module, and selected workloads get a kernel of their own in safe Rust. This chapter is how Linux meets the host-independent design of [Design](../design/README.md): it carries what is Linux's, and links to that chapter for what is not. A prototype of its central mechanisms runs a kernel whose source is unchanged from the Asterinas tree, inside a patched Linux 6.12.*
 
 <figure class="fwd-fig">
 <div class="head">
@@ -123,13 +123,13 @@ Background, for a reader new to either side:
 - [Kernelets in brief](kernelets-in-brief.md): the two-layer kernel, API virtualization, and the vocabulary.
 - [The Linux this chapter needs](background.md): tasks, the entry path, signals, address spaces, modules, program loaders, control groups.
 
-The design, in the order of [Design for Asterinas](../asterinas-mode/index.md):
+The design, in the order of [Design for Asterinas](../asterinas-mode/README.md):
 
 - [Boundaries and trust](principles.md): the parties, the interfaces, the threat model, the invariants.
 - [Builds and images](builds-and-images.md): one source, one shared text, many instances; what the build checks.
 - [The kernelet API: control half](kernelet-api-control.md): identity, configuration, the life cycle, the endovisor's records.
 - [The kernelet API: service half](kernelet-api-service.md): the twenty services, and what each becomes on Linux.
-- [Virtualizing OSTD](virtualizing-ostd/index.md): the map, and then the mechanisms.
+- [Virtualizing OSTD](virtualizing-ostd/README.md): the map, and then the mechanisms.
   - [Memory](virtualizing-ostd/memory.md)
   - [Tasks, virtual CPUs, and carriers](virtualizing-ostd/tasks.md)
   - [Scheduling](virtualizing-ostd/scheduling.md)

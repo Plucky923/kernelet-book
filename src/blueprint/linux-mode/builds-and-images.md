@@ -7,7 +7,7 @@
 The Asterinas kernel is compiled twice from the same source.
 
 - The **host build** is the ordinary kernel for a machine. This chapter does not use it: on Linux, the host kernel is Linux.
-- The **kernelet build** compiles the kernel proper against **vOSTD**, which is OSTD's own source with the Cargo feature `kernelet` selected. Under that feature every OSTD item is [identical, virtualized or absent](virtualizing-ostd/index.md), the machine-facing drivers (PCI, NVMe, the serial port, the framebuffer) are left out, and the kernel proper is compiled with `forbid(unsafe_code)`, which turns the project's convention into a compiler error. A second feature, `host-linux`, selects the three host-specific bodies inside vOSTD.
+- The **kernelet build** compiles the kernel proper against **vOSTD**, which is OSTD's own source with the Cargo feature `kernelet` selected. Under that feature every OSTD item is [identical, virtualized or absent](virtualizing-ostd/README.md), the machine-facing drivers (PCI, NVMe, the serial port, the framebuffer) are left out, and the kernel proper is compiled with `forbid(unsafe_code)`, which turns the project's convention into a compiler error. A second feature, `host-linux`, selects the three host-specific bodies inside vOSTD.
 
 The kernel proper and vOSTD link into one ELF file, the **kernelet image**. A registered image is called a **kind**; a machine typically has one or two kinds and thousands of instances.
 

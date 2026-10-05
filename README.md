@@ -7,7 +7,7 @@ The book is an [mdBook](https://rust-lang.github.io/mdBook/) and serves two audi
 - **Asterinas developers**, for whom it is a specification: architecture, the design layer by layer, the OSTD changes, the enforcement checks and the staged plan, written to be precise enough for a coding agent to implement from.
 - **Academic readers**, for whom it is the long form of a paper: motivation, the mechanisms and their costs, an honest list of where the design loses and what has not been verified, and the prior art it is compared with.
 
-Start with [`src/executive-summary.md`](src/executive-summary.md), which pitches the idea to each audience.
+Start with [`src/README.md`](src/README.md), which pitches the idea to each audience.
 
 ## Prerequisites
 

@@ -45,7 +45,7 @@ Interrupts are re-enabled inside `user_run` before it returns, on every path, be
 
 **Killing a task in user mode.** A task in user mode is inside `user_run` and will reach the epilogue, where a dying kernelet's task is terminated, only when it comes back. the reaper therefore sends a reschedule interrupt to every host CPU on which a task of the kernelet is running, as the host already does to enforce `need_preempt` remotely (checked on the tree: `ostd/src/task/scheduler/mod.rs`, the inter-processor call); the interrupt returns `user_run` with `2`, and the epilogue terminates the task. The re-check before `syscall_return` closes the window in which the interrupt lands inside `user_run` itself. The cost is one interrupt per running task per kill.
 
-`UserContextApi`, `UserModeHooks`, `ReturnReason`, `UserContext` and its register types, `CpuException`, `FpuContext` and `FsBase` are identical, as the [taxonomy](index.md) lists; `CpuException::from_raw` is the one addition, the tree's `new` with the fault address as an argument instead of a CR2 read. `GsBase` is virtualized to a direct MSR access, since its `swapgs` bracket is safe only with interrupts really disabled.
+`UserContextApi`, `UserModeHooks`, `ReturnReason`, `UserContext` and its register types, `CpuException`, `FpuContext` and `FsBase` are identical, as the [taxonomy](README.md) lists; `CpuException::from_raw` is the one addition, the tree's `new` with the fault address as an argument instead of a CR2 read. `GsBase` is virtualized to a direct MSR access, since its `swapgs` bracket is safe only with interrupts really disabled.
 
 ## Page faults in user copies
 

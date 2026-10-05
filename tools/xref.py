@@ -222,7 +222,14 @@ def cmd_check(src):
         if not os.path.exists(p):
             print("MISSING chapter file: %s" % os.path.relpath(p, src))
             ok = False
+    # Index pages are README.md, which GitHub shows when a directory is opened; that is safe only
+    # while book.toml turns off mdBook's default `index` preprocessor (see the comment there).
+    with open(os.path.join(os.path.dirname(src), "book.toml"), encoding="utf-8") as f:
+        readme_links_work = re.search(r"^\s*use-default-preprocessors\s*=\s*false\b", f.read(), re.M) is not None
     for path in all_md_files(src):
+        if os.path.basename(path) == "index.md":
+            print("INDEX %s (name a directory's index page README.md)" % os.path.relpath(path, src))
+            ok = False
         if os.path.normpath(path) not in summary_paths:
             print("ORPHAN (not in SUMMARY.md): %s" % os.path.relpath(path, src))
             ok = False
@@ -244,10 +251,10 @@ def cmd_check(src):
                     print("PAPER %s:%d -> %s (pages under paper/ may link only within paper/)"
                           % (rel_from, i + 1, href))
                     ok = False
-                if os.path.basename(target) == "README.md":
-                    # mdBook renders a README.md chapter as index.html but rewrites a link to it as
-                    # README.html, which does not exist. Index pages are named index.md for that reason.
-                    print("README %s:%d -> %s (mdBook would render this href as README.html; name the page index.md)"
+                if os.path.basename(target) == "README.md" and not readme_links_work:
+                    # With mdBook's default `index` preprocessor on, a README.md chapter is rendered as
+                    # index.html but a link to it is rewritten as README.html, which does not exist.
+                    print("README %s:%d -> %s (book.toml must keep use-default-preprocessors = false)"
                           % (os.path.relpath(path, src), i + 1, href))
                     ok = False
                 if not os.path.isfile(target):

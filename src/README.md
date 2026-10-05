@@ -2,7 +2,7 @@
 
 This book is written for two kinds of reader, and it tries to serve both without shortchanging either.
 
-**Asterinas developers** will build this. For them the book is a specification, [The Blueprint](blueprint/index.md), written to be precise enough that a coding agent can work from it.
+**Asterinas developers** will build this. For them the book is a specification, [The Blueprint](blueprint/README.md), written to be precise enough that a coding agent can work from it.
 
 **Academic readers** will judge it. For them the book is the long form of a paper, [The Paper](paper/abstract.md), with the design's costs, its limits and what has not been verified stated as plainly as its claims.
 
@@ -172,7 +172,7 @@ Asterinas Kernelets are a third point in that space, and this book calls the ide
 </svg>
 </figure>
 
-**The hardest argument is "replace your kernel".** An operator asked to put Asterinas underneath a fleet is being asked to bet the machine on a young code base, and no amount of safe Rust makes that an easy signature. It is the right argument to win eventually and the wrong one to need first — and we do not need it first, because of a property of the design rather than a concession in it. A kernelet is not built on a machine; it is built on an interface. It calls a table of functions and never touches hardware, and nothing in that arrangement says who implements the table. If the answer can be Linux, the host underneath is a replaceable part, which is what [Design for Linux](blueprint/linux-mode/index.md) sets out to test. That chapter gives the design, and a prototype runs a small kernel on it; the full endovisor is not built.
+**The hardest argument is "replace your kernel".** An operator asked to put Asterinas underneath a fleet is being asked to bet the machine on a young code base, and no amount of safe Rust makes that an easy signature. It is the right argument to win eventually and the wrong one to need first — and we do not need it first, because of a property of the design rather than a concession in it. A kernelet is not built on a machine; it is built on an interface. It calls a table of functions and never touches hardware, and nothing in that arrangement says who implements the table. If the answer can be Linux, the host underneath is a replaceable part, which is what [Design for Linux](blueprint/linux-mode/README.md) sets out to test. That chapter gives the design, and a prototype runs a small kernel on it; the full endovisor is not built.
 
 That changes the question an operator is asked. The host stays the kernel they already run, with one small patch to the path a system call takes; what changes is that selected workloads stop sharing it with their neighbors and get a kernel of their own, in safe Rust, inside the same machine. Nothing is replaced, and the decision is reversible — a workload that does not suit a kernelet keeps running the way it runs today, beside one that does, so the cost of being wrong is one workload rather than one fleet. It also gives the project somewhere real to grow, because the same source, the same framework and the same kernel proper compile against a second implementation of one table: the work is not done twice and the maturity is not earned twice.
 
@@ -183,8 +183,8 @@ A second implementation pays a dividend a single one cannot. Porting the interfa
 You need to know Rust and roughly how an operating-system kernel is put together. Nothing else is assumed. The book is three volumes, and they are meant to be read in the order that suits the reader rather than the order they were written in.
 
 - [**The Paper**](paper/abstract.md) is the idea in its most concise form, written as a research paper.
-- [**The Blueprint**](blueprint/index.md) is the design document, written so that a coding agent can implement from it.
-- [**The Notes**](notes/index.md) hold the working material behind the other two.
+- [**The Blueprint**](blueprint/README.md) is the design document, written so that a coding agent can implement from it.
+- [**The Notes**](notes/README.md) hold the working material behind the other two.
 
 Logically the Notes came first, the Blueprint was built from them, and the Paper was distilled from the Blueprint.
 

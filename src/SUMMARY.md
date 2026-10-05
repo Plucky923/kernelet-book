@@ -1,6 +1,6 @@
 # Summary
 
-[Executive Summary](executive-summary.md)
+[Executive Summary](README.md)
 
 # The Paper
 
@@ -16,21 +16,21 @@
 
 # The Blueprint
 
-- [The Blueprint](blueprint/index.md)
-- [Overview](blueprint/overview/index.md)
+- [The Blueprint](blueprint/README.md)
+- [Overview](blueprint/overview/README.md)
   - [Goals: what the boundary owes](blueprint/overview/goals.md)
   - [API virtualization, in one page](blueprint/overview/api-virtualization.md)
   - [Terminology](blueprint/overview/terminology.md)
   - [Why it is hard](blueprint/overview/challenges.md)
-- [Design](blueprint/design/index.md)
+- [Design](blueprint/design/README.md)
   - [Channels](blueprint/design/channels.md)
   - [The kernelet runtime](blueprint/design/kernelet-runtime.md)
-- [Design for Asterinas](blueprint/asterinas-mode/index.md)
+- [Design for Asterinas](blueprint/asterinas-mode/README.md)
   - [Boundaries and trust](blueprint/asterinas-mode/principles.md)
   - [Builds and images](blueprint/asterinas-mode/builds-and-images.md)
   - [The kernelet API: control half](blueprint/asterinas-mode/kernelet-api-control.md)
   - [The kernelet API: service half](blueprint/asterinas-mode/kernelet-api-service.md)
-  - [Virtualizing OSTD](blueprint/asterinas-mode/virtualizing-ostd/index.md)
+  - [Virtualizing OSTD](blueprint/asterinas-mode/virtualizing-ostd/README.md)
     - [Memory](blueprint/asterinas-mode/virtualizing-ostd/memory.md)
     - [Tasks, virtual CPUs, and carriers](blueprint/asterinas-mode/virtualizing-ostd/tasks.md)
     - [Scheduling](blueprint/asterinas-mode/virtualizing-ostd/scheduling.md)
@@ -43,14 +43,14 @@
   - [Zero-copy I/O](blueprint/asterinas-mode/zero-copy-io.md)
   - [The endovisor](blueprint/asterinas-mode/endovisor.md)
   - [The kernelet runtime](blueprint/asterinas-mode/kernelet-runtime.md)
-- [Design for Linux](blueprint/linux-mode/index.md)
+- [Design for Linux](blueprint/linux-mode/README.md)
   - [Background: kernelets in brief](blueprint/linux-mode/kernelets-in-brief.md)
   - [Background: the Linux this chapter needs](blueprint/linux-mode/background.md)
   - [Boundaries and trust](blueprint/linux-mode/principles.md)
   - [Builds and images](blueprint/linux-mode/builds-and-images.md)
   - [The kernelet API: control half](blueprint/linux-mode/kernelet-api-control.md)
   - [The kernelet API: service half](blueprint/linux-mode/kernelet-api-service.md)
-  - [Virtualizing OSTD](blueprint/linux-mode/virtualizing-ostd/index.md)
+  - [Virtualizing OSTD](blueprint/linux-mode/virtualizing-ostd/README.md)
     - [Memory](blueprint/linux-mode/virtualizing-ostd/memory.md)
     - [Tasks, virtual CPUs, and carriers](blueprint/linux-mode/virtualizing-ostd/tasks.md)
     - [Scheduling](blueprint/linux-mode/virtualizing-ostd/scheduling.md)
@@ -68,7 +68,7 @@
 
 # The Notes
 
-- [The Notes](notes/index.md)
+- [The Notes](notes/README.md)
 - [OSTD API inventory](notes/ostd-api-inventory.md)
 - [I/O microbenchmarks](notes/io-microbenchmarks.md)
 - [Design register](notes/design-register.md)

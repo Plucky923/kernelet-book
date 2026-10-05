@@ -1,6 +1,6 @@
 # Design
 
-*The design of kernelets that does not depend on which kernel is the host: what a kernelet is, what it may assume, and what any host must provide it. The two chapters after this one say how [Asterinas](../asterinas-mode/index.md) and [Linux](../linux-mode/index.md) provide it.*
+*The design of kernelets that does not depend on which kernel is the host: what a kernelet is, what it may assume, and what any host must provide it. The two chapters after this one say how [Asterinas](../asterinas-mode/README.md) and [Linux](../linux-mode/README.md) provide it.*
 
 > **Being written.** This chapter is being assembled from the two host chapters, which said the same things twice, page by page ([the plan](https://github.com/tatetian/kernelet-book/blob/host-alignment/ALIGNMENT_PLAN.md)). Until a page appears here, the host chapters still carry its subject in full. The list at the foot of this page is what has moved so far.
 

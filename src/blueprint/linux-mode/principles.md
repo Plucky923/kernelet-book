@@ -85,7 +85,7 @@ The table after the list says which page carries the mechanism behind each. Each
 - **I5, no closure crosses.** *Checked by types.* The endovisor stores no function pointer into a kernelet beyond the entry table, and a kernelet none into the host beyond the service table. The endovisor never sees a task or a closure of a kernelet at all; it enters an image at three fixed addresses (the ELF entry point, and the entry table's entry for a secondary virtual CPU and its upcall stub), and checks at registration that they lie in the image's text.
 - **I6, charged work.** *Checked by membership.* Every carrier and device thread of a kernelet is in the sandbox's control group, and every grain is allocated there. Linux sees a sandbox as a fixed number of tasks in one group, whatever the kernelet's own scheduler does with its tasks, and no service changes a carrier's priority, class or affinity; the one way a kernelet can hold a processor against Linux's wishes is [bounded at 2 ms of its own run time and charged](virtualizing-ostd/scheduling.md#fair), and what it can send to other processors (kicks, spin yields, flushes) is bounded and stays inside its `cpuset`, which is why latency-critical host work is kept out of it.
 - **I7, termination.** *Eviction is shown on the prototype for one spinning kernelet; the rest is argued.* A carrier whose instruction pointer is in kernelet text holds nothing of Linux's beyond an increment of its preemption count, which the exit stub gives back, and references that Linux's own exit path returns (its address space, its lifeline), and can be removed at any instruction; every sleep inside a service call is killable; and a kernelet can be destroyed without running any of its code ([Faults](faults-and-reclamation.md)).
-- **I8, compatibility.** *Checked by the build.* The kernel proper's source is the same on every host, and its behavior differs only where the [classification](virtualizing-ostd/index.md) says an item is virtualized or absent.
+- **I8, compatibility.** *Checked by the build.* The kernel proper's source is the same on every host, and its behavior differs only where the [classification](virtualizing-ostd/README.md) says an item is virtualized or absent.
 
 | invariant | where its mechanism is |
 |---|---|
@@ -96,7 +96,7 @@ The table after the list says which page carries the mechanism behind each. Each
 | I5 no closure crosses | [service half](kernelet-api-service.md#abi) (three fixed ways in) |
 | I6 charged work | [Tasks](virtualizing-ostd/tasks.md#root) (membership by inheritance); [Scheduling](virtualizing-ostd/scheduling.md#fair) (why a kernelet's scheduling cannot cost its neighbors); [Memory](virtualizing-ostd/memory.md) (charged grains); [The endovisor](endovisor.md#patch) (the list of what is charged) |
 | I7 termination | [Faults](faults-and-reclamation.md#stopping) |
-| I8 compatibility | [Virtualizing OSTD](virtualizing-ostd/index.md) |
+| I8 compatibility | [Virtualizing OSTD](virtualizing-ostd/README.md) |
 
 ## What this page decides
 

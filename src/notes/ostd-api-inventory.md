@@ -1,6 +1,6 @@
 # OSTD API inventory
 
-The public API of OSTD as read from the Asterinas tree at commit `ab9a4cfdc726263b3f41ccea0337633e24b443fc` (the tree's `HEAD` when this note was written, dated 2026-08-31), and how the kernel above OSTD uses it. This is the raw material for the design chapters's [taxonomy](../blueprint/asterinas-mode/virtualizing-ostd/index.md), which decides what each item becomes in vOSTD. Nothing here is a design decision.
+The public API of OSTD as read from the Asterinas tree at commit `ab9a4cfdc726263b3f41ccea0337633e24b443fc` (the tree's `HEAD` when this note was written, dated 2026-08-31), and how the kernel above OSTD uses it. This is the raw material for the design chapters's [taxonomy](../blueprint/asterinas-mode/virtualizing-ostd/README.md), which decides what each item becomes in vOSTD. Nothing here is a design decision.
 
 **Sizes, measured on the tree** (lines of `.rs` files, `wc -l`):
 

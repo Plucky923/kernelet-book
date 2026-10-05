@@ -91,7 +91,7 @@ This chapter is the design of Asterinas Kernelets, built from the figure above. 
 | question | pages |
 |---|---|
 | 1. What API does OSTD provide so that the endovisor can manage the lifecycle of kernelets and customize their behavior? | [The kernelet API: control half](kernelet-api-control.md) |
-| 2. How is the API of vOSTD virtualized, item by item? | [Virtualizing OSTD](virtualizing-ostd/index.md) and its pages on [memory](virtualizing-ostd/memory.md), [tasks](virtualizing-ostd/tasks.md), [interrupts and time](virtualizing-ostd/interrupts-and-time.md), [user mode](virtualizing-ostd/user-mode.md), [devices](virtualizing-ostd/devices.md) and [the rest](virtualizing-ostd/the-rest.md) |
+| 2. How is the API of vOSTD virtualized, item by item? | [Virtualizing OSTD](virtualizing-ostd/README.md) and its pages on [memory](virtualizing-ostd/memory.md), [tasks](virtualizing-ostd/tasks.md), [interrupts and time](virtualizing-ostd/interrupts-and-time.md), [user mode](virtualizing-ostd/user-mode.md), [devices](virtualizing-ostd/devices.md) and [the rest](virtualizing-ostd/the-rest.md) |
 | 3. What API does OSTD expose to vOSTD, and how does a call cross? | [The kernelet API: service half](kernelet-api-service.md) |
 | 4. How is an OCI-compatible kernelet runtime built on the endovisor's user-space ABI, and how is the endovisor built on OSTD? | [The endovisor](endovisor.md) and [The kernelet runtime](kernelet-runtime.md) |
 
@@ -103,7 +103,7 @@ In this chapter:
 - [Builds and images](builds-and-images.md)
 - [The kernelet API: control half](kernelet-api-control.md)
 - [The kernelet API: service half](kernelet-api-service.md)
-- [Virtualizing OSTD](virtualizing-ostd/index.md)
+- [Virtualizing OSTD](virtualizing-ostd/README.md)
   - [Memory](virtualizing-ostd/memory.md)
   - [Tasks, virtual CPUs, and carriers](virtualizing-ostd/tasks.md)
   - [Scheduling](virtualizing-ostd/scheduling.md)
