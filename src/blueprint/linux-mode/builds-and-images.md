@@ -123,6 +123,6 @@ One property is still open. A Linux kernel built with **type-checked indirect br
 
 ## What this page decides
 
-- **The image is position-independent and each instance is a `vmap()` range of shared text followed by private data** (register D3, kept). The alternatives are a private kernel address space per kernelet, which Linux cannot provide, and Linux's module loader, which cannot share text.
-- **The patch exports `set_memory_rox`, `set_memory_rw` and `set_memory_ro`** (register D80, revised). Nothing else about loading needs Linux's cooperation.
-- **The exception table is self-relative** (register D87, kept).
+- **The image is position-independent and each instance is a `vmap()` range of shared text followed by private data** ([register D3](../../notes/design-register.md#decisions), kept). The alternatives are a private kernel address space per kernelet, which Linux cannot provide, and Linux's module loader, which cannot share text.
+- **The patch exports `set_memory_rox`, `set_memory_rw` and `set_memory_ro`** ([register D80](../../notes/design-register.md#decisions), revised). Nothing else about loading needs Linux's cooperation.
+- **The exception table is self-relative** ([register D87](../../notes/design-register.md#decisions), kept).

@@ -180,6 +180,6 @@ There is no service to read or write host memory, to map anything, to allocate a
 
 ## What this page decides
 
-- **The service table's memory, device and output groups are the same on both hosts; its processor group is this host's own: virtual CPUs in place of host threads** (register D116; D2 and D65 kept). A kernelet image for Linux is built from the same source, with OSTD's own task layer in place of the virtualized one.
-- **Service calls run on the carrier's Linux stack, with the kernelet's guard depth taken out of Linux's preemption count for their duration** (register D112, D119).
-- **The caller is identified through Linux's current task, and the depth and dying state live in endovisor memory** (register D7 and D8, adapted). The alternative, state in shared pages, would let a kernelet make itself unstoppable.
+- **The service table's memory, device and output groups are the same on both hosts; its processor group is this host's own: virtual CPUs in place of host threads** ([register D116](../../notes/design-register.md#decisions); D2 and D65 kept). A kernelet image for Linux is built from the same source, with OSTD's own task layer in place of the virtualized one.
+- **Service calls run on the carrier's Linux stack, with the kernelet's guard depth taken out of Linux's preemption count for their duration** ([register D112](../../notes/design-register.md#decisions), D119).
+- **The caller is identified through Linux's current task, and the depth and dying state live in endovisor memory** ([register D7](../../notes/design-register.md#decisions) and D8, adapted). The alternative, state in shared pages, would let a kernelet make itself unstoppable.

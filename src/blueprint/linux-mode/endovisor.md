@@ -123,5 +123,5 @@ The endovisor offers user space one character device, `/dev/kernelet`, root-only
 
 ## What this page decides
 
-- **The endovisor is one C module, and Linux mode requires a patched Linux** (register D79, kept, and D80, revised; D120): the gate, one helper and five exports. An unpatched Linux is ruled out by function, not speed: without the gate, a tenant's second process makes its system calls to Linux.
-- **A sandbox starts by `exec` of a sandbox file and is owned by a descriptor** (register D105). The alternative, a start `ioctl` that turns the calling thread into the root carrier, leaves the runtime's own address space in the root carrier, to be copied into every clone.
+- **The endovisor is one C module, and Linux mode requires a patched Linux** ([register D79](../../notes/design-register.md#decisions), kept, and D80, revised; D120): the gate, one helper and five exports. An unpatched Linux is ruled out by function, not speed: without the gate, a tenant's second process makes its system calls to Linux.
+- **A sandbox starts by `exec` of a sandbox file and is owned by a descriptor** ([register D105](../../notes/design-register.md#decisions)). The alternative, a start `ioctl` that turns the calling thread into the root carrier, leaves the runtime's own address space in the root carrier, to be copied into every clone.

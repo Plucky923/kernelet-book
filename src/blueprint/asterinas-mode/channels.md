@@ -26,5 +26,5 @@ The host kernel has an `AF_VSOCK` layer, but it is a *guest's*: bound at initial
 
 ## What this page decides
 
-- **Host-side vsock endpoints are stream descriptors from the endovisor ABI, not a second transport for the host's own `AF_VSOCK` layer** (register D39, this host's half): teaching a guest-side socket layer to route to a switch as well as to a device is more surface than the runtime needs.
+- **Host-side vsock endpoints are stream descriptors from the endovisor ABI, not a second transport for the host's own `AF_VSOCK` layer** ([register D39](../../notes/design-register.md#decisions), this host's half): teaching a guest-side socket layer to route to a switch as well as to a device is more surface than the runtime needs.
 - The common decisions D37, D38, D51 and D68 are on the [Channels](../design/channels.md) page.

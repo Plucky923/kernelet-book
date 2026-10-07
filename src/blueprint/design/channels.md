@@ -63,8 +63,8 @@ The second version halves the copy path instead: zero-copy I/O copies once, fram
 
 ## What this page decides
 
-- **All communication is vsock over the ordinary device path** (register D37). The alternative, a dedicated cross-sandbox channel with service calls of its own, would be a second mechanism to secure and a second thing for tenants to learn; vsock is what their software already speaks.
-- **The switch copies in the first version** (register D38). The frame move is an extension with its preconditions stated, because it changes the ownership model and must be measured against the copy path before it is adopted.
-- **The switch rewrites advertised credit down to a policy limit and resets a sender that exceeds it** (register D51). The alternative, back-pressure by leaving the sender's transmit queue undrained, stalls every connection on the device.
-- **Reachability between sandboxes is denied by default** (register D68); a runtime that holds both sandbox descriptors opens a pair.
-- **The host's end of a channel is a stream descriptor from the endovisor, not a second transport for the host's own vsock layer** (register D39). Each host chapter gives its own reason; neither is about what a tenant sees.
+- **All communication is vsock over the ordinary device path** ([register D37](../../notes/design-register.md#decisions)). The alternative, a dedicated cross-sandbox channel with service calls of its own, would be a second mechanism to secure and a second thing for tenants to learn; vsock is what their software already speaks.
+- **The switch copies in the first version** ([register D38](../../notes/design-register.md#decisions)). The frame move is an extension with its preconditions stated, because it changes the ownership model and must be measured against the copy path before it is adopted.
+- **The switch rewrites advertised credit down to a policy limit and resets a sender that exceeds it** ([register D51](../../notes/design-register.md#decisions)). The alternative, back-pressure by leaving the sender's transmit queue undrained, stalls every connection on the device.
+- **Reachability between sandboxes is denied by default** ([register D68](../../notes/design-register.md#decisions)); a runtime that holds both sandbox descriptors opens a pair.
+- **The host's end of a channel is a stream descriptor from the endovisor, not a second transport for the host's own vsock layer** ([register D39](../../notes/design-register.md#decisions)). Each host chapter gives its own reason; neither is about what a tenant sees.

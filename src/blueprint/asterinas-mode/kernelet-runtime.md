@@ -28,7 +28,7 @@ The host's user space has no `e2fsprogs` of its own (checked: the tree's images 
 
 ## The network
 
-A kernelet's `virtio-net` device is user-space backed ([Devices](virtualizing-ostd/devices.md), register D25): the runtime holds the network endpoint descriptor and bridges Ethernet frames between it and the host. In the first version the bridge is a user-space NAT in the runtime's own process, in the style of `slirp`: frames from the kernelet are terminated in a user-space TCP/IP stack and forwarded over ordinary host sockets, and replies are framed back. CNI plugins that expect to configure a network namespace and a `veth` pair do not apply, since the host kernel has no such objects (checked on the tree); the runtime instead assigns the address, route and resolver it tells the agent, and offers port mapping and outbound connectivity from `config.json` annotations. **[unverified]** (register A11): that user-space NAT throughput is acceptable for the workloads the design targets; assumption A7's in-kernel backend is the alternative.
+A kernelet's `virtio-net` device is user-space backed ([Devices](virtualizing-ostd/devices.md), [register D25](../../notes/design-register.md#decisions)): the runtime holds the network endpoint descriptor and bridges Ethernet frames between it and the host. In the first version the bridge is a user-space NAT in the runtime's own process, in the style of `slirp`: frames from the kernelet are terminated in a user-space TCP/IP stack and forwarded over ordinary host sockets, and replies are framed back. CNI plugins that expect to configure a network namespace and a `veth` pair do not apply, since the host kernel has no such objects (checked on the tree); the runtime instead assigns the address, route and resolver it tells the agent, and offers port mapping and outbound connectivity from `config.json` annotations. **[unverified]** ([register A11](../../notes/design-register.md#assumptions)): that user-space NAT throughput is acceptable for the workloads the design targets; assumption A7's in-kernel backend is the alternative.
 
 What a tenant sees of it: TCP is terminated twice, so the host stack's window and reset behavior show through; ICMP is not forwarded unless the NAT emulates it, so `ping` fails; peers see the host's address; CNI and `podman network` do not apply; only port mapping and outbound connectivity are offered.
 
@@ -38,5 +38,5 @@ Per network frame: two copies and two wakeups on the endpoint, plus the user-spa
 
 ## What this page decides
 
-- **User-space NAT for the network in the first version** (register D45), following D25; the host has no tap or bridge.
+- **User-space NAT for the network in the first version** ([register D45](../../notes/design-register.md#decisions)), following D25; the host has no tap or bridge.
 - The common decisions D43, D54 and D44 are on the [kernelet runtime](../design/kernelet-runtime.md) page.

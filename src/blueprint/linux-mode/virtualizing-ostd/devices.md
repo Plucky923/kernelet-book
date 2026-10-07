@@ -51,5 +51,5 @@ A virtio disk, a virtio network interface, a console and a vsock device, with th
 
 ## What this page decides
 
-- **Devices are virtio over function calls, with models in the endovisor** (register D6 and D23, kept). Both hosts share this; only the backends differ.
-- **Backends run on device threads created by the root carrier as `vhost_task` workers, against objects the runtime opened** (register D102). A plain kernel thread moved into the control group was the first choice, and is wrong: Linux does not charge kernel memory to kernel threads. The alternative, doing backend I/O inside the service call, would make a carrier sleep in Linux for the length of a disk request while holding the driver's lock.
+- **Devices are virtio over function calls, with models in the endovisor** ([register D6](../../../notes/design-register.md#decisions) and D23, kept). Both hosts share this; only the backends differ.
+- **Backends run on device threads created by the root carrier as `vhost_task` workers, against objects the runtime opened** ([register D102](../../../notes/design-register.md#decisions)). A plain kernel thread moved into the control group was the first choice, and is wrong: Linux does not charge kernel memory to kernel threads. The alternative, doing backend I/O inside the service call, would make a carrier sleep in Linux for the length of a disk request while holding the driver's lock.

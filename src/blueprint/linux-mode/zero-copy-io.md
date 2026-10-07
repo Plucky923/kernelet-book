@@ -55,5 +55,5 @@ An entry carries at most sixteen pages, 64 KiB; larger requests are split. On no
 
 ## What this page decides
 
-- **The second version's devices are lending devices** (register D70 to D72, kept), enforced on both sides of the boundary.
-- **On Linux, a lent frame is handed to the block layer as a `bio` segment with `REQ_NOWAIT`, and to a socket as a spliced page** (register D109), in place of the non-sleeping submission path the other host must grow (assumption A14).
+- **The second version's devices are lending devices** ([register D70](../../notes/design-register.md#decisions) to D72, kept), enforced on both sides of the boundary.
+- **On Linux, a lent frame is handed to the block layer as a `bio` segment with `REQ_NOWAIT`, and to a socket as a spliced page** ([register D109](../../notes/design-register.md#decisions)), in place of the non-sleeping submission path the other host must grow (assumption A14).

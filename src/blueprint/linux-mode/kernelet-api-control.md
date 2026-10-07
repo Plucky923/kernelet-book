@@ -97,5 +97,5 @@ Two tables are machine-wide: the **slot table**, from slot to kernelet and gener
 ## What this page decides
 
 - **Every endovisor table names kernelets by generation-stamped identifiers, never by pointer**, as on the other host, so that reuse cannot alias.
-- **Memory is granted at start, not at create** (register D106), so that it is charged to the sandbox's control group from the first page.
-- **Processor limits are the control group's, not the configuration's** (register D107). The Asterinas host needs its own throttle because its scheduler has no groups; Linux's has.
+- **Memory is granted at start, not at create** ([register D106](../../notes/design-register.md#decisions)), so that it is charged to the sandbox's control group from the first page.
+- **Processor limits are the control group's, not the configuration's** ([register D107](../../notes/design-register.md#decisions)). The Asterinas host needs its own throttle because its scheduler has no groups; Linux's has.

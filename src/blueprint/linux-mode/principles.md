@@ -100,4 +100,4 @@ The table after the list says which page carries the mechanism behind each. Each
 
 ## What this page decides
 
-- **The boundary is the language and four narrow interfaces, not hardware** (register D89 restates this for Linux). The alternative that restores hardware separation, running each kernelet in a hardware-virtualized guest, is [considered and rejected](alternatives.md) for its cost on every memory access.
+- **The boundary is the language and four narrow interfaces, not hardware** ([register D89](../../notes/design-register.md#decisions) restates this for Linux). The alternative that restores hardware separation, running each kernelet in a hardware-virtualized guest, is [considered and rejected](alternatives.md) for its cost on every memory access.

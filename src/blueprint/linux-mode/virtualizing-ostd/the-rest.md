@@ -51,5 +51,5 @@ A kernelet runs in kernel mode, so nothing in hardware stops its code from execu
 
 ## What this page decides
 
-- **A kernelet's log goes to a per-sandbox ring, rate-limited, not to Linux's log** (register D103). The alternative is simpler and lets any tenant write to the operator's console.
-- **Virtual CPUs start and idle as processors do, through `vcpu_boot` and `vcpu_idle`** (register D116). With OSTD's own task layer in the build, `yield_now` from the boot context needs no special meaning, and register D104, which gave it one, is withdrawn.
+- **A kernelet's log goes to a per-sandbox ring, rate-limited, not to Linux's log** ([register D103](../../../notes/design-register.md#decisions)). The alternative is simpler and lets any tenant write to the operator's console.
+- **Virtual CPUs start and idle as processors do, through `vcpu_boot` and `vcpu_idle`** ([register D116](../../../notes/design-register.md#decisions)). With OSTD's own task layer in the build, `yield_now` from the boot context needs no special meaning, and [register D104](../../../notes/design-register.md#decisions), which gave it one, is withdrawn.

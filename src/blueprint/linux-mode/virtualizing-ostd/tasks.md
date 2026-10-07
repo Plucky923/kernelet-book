@@ -155,8 +155,8 @@ Its own processes and threads, scheduled by its own kernel. From the host, a san
 
 ## What this page decides
 
-- **A carrier carries a virtual CPU, not a task, and is cloned from the sandbox's root carrier with `kernel_clone()`** (register D93, revised by D116). Kernel threads cannot enter user mode; Linux's user-mode-helper interface starts tasks in the wrong control group, with the wrong credentials and without the filter.
-- **The root carrier is created by a binary-format handler** (register D94), because `exec` is the one operation that gives a process a blank address space, and because Linux's own reference counting then pins the module for exactly as long as any carrier's address space lives.
-- **Kernelet code runs on the current task's kernelet stack, and everything else on the carrier's Linux stack** (register D84, kept; D112).
-- **Per-CPU data belongs to a virtual CPU, which belongs to one carrier** (register D88's seat is retired by D116): there is no lease to take, because nothing else can be that virtual CPU.
-- **One pinned, hard-interrupt watch timer per processor serves the tick, the yield on a non-preempting Linux, and the grace bound** (register D115, extended by D117 and D119).
+- **A carrier carries a virtual CPU, not a task, and is cloned from the sandbox's root carrier with `kernel_clone()`** ([register D93](../../../notes/design-register.md#decisions), revised by D116). Kernel threads cannot enter user mode; Linux's user-mode-helper interface starts tasks in the wrong control group, with the wrong credentials and without the filter.
+- **The root carrier is created by a binary-format handler** ([register D94](../../../notes/design-register.md#decisions)), because `exec` is the one operation that gives a process a blank address space, and because Linux's own reference counting then pins the module for exactly as long as any carrier's address space lives.
+- **Kernelet code runs on the current task's kernelet stack, and everything else on the carrier's Linux stack** ([register D84](../../../notes/design-register.md#decisions), kept; D112).
+- **Per-CPU data belongs to a virtual CPU, which belongs to one carrier** ([register D88](../../../notes/design-register.md#decisions)'s seat is retired by D116): there is no lease to take, because nothing else can be that virtual CPU.
+- **One pinned, hard-interrupt watch timer per processor serves the tick, the yield on a non-preempting Linux, and the grace bound** ([register D115](../../../notes/design-register.md#decisions), extended by D117 and D119).

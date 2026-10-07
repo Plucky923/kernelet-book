@@ -47,7 +47,7 @@ The first version gives a sandbox a TAP interface, which the runtime creates and
 
 ## What this page decides
 
-- **The runtime prepares a process and lets it execute the sandbox file** (the runtime's side of register D105, which the [endovisor page](endovisor.md#abi) decides): control group, credentials, namespaces and seccomp filter are set with Linux's own tools and inherited by every carrier.
-- **The network backend is a TAP interface** (register D110), replacing the other host's user-space translator.
+- **The runtime prepares a process and lets it execute the sandbox file** (the runtime's side of [register D105](../../notes/design-register.md#decisions), which the [endovisor page](endovisor.md#abi) decides): control group, credentials, namespaces and seccomp filter are set with Linux's own tools and inherited by every carrier.
+- **The network backend is a TAP interface** ([register D110](../../notes/design-register.md#decisions)), replacing the other host's user-space translator.
 - **Creation is rate-limited per tenant**, because on this host creating an instance is a machine-wide event.
 - The common decisions D43, D54 and D44 are on the [kernelet runtime](../design/kernelet-runtime.md) page.

@@ -18,5 +18,5 @@ Linux has its own `AF_VSOCK` family for its virtual machines, and the endovisor 
 
 ## What this page decides
 
-- **The host's end is a descriptor from the endovisor's device, not Linux's `AF_VSOCK`** (register D39, this host's half), for a reason specific to Linux: the single host-to-guest transport slot.
+- **The host's end is a descriptor from the endovisor's device, not Linux's `AF_VSOCK`** ([register D39](../../notes/design-register.md#decisions), this host's half), for a reason specific to Linux: the single host-to-guest transport slot.
 - The common decisions D37, D38, D51 and D68 are on the [Channels](../design/channels.md) page.

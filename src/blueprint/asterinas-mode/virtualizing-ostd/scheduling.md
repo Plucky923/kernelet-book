@@ -16,7 +16,7 @@ Each virtual CPU has a record in the shared pages, written by both sides:
 - **`guards`**, the kernelet's count of held guards, read by the host;
 - **`irq_off`**, the kernelet's virtual interrupt flag, read by the host.
 
-Two fields and not one, for the reason the Linux prototype found and this one confirmed: a single count would mean that a kernelet holding a spin lock received no ticks. They are also why the aliasing of `irq::disable_local` and `DisabledLocalIrqGuard` to the preemption count is withdrawn (register D18): the L1 bottom half calls `disable_preempt()` and then `arch::irq::enable_local()`, which are two distinct facilities, and under the aliasing the second would have to lower the count the first just raised. The four real `arch::irq` primitives sit over `irq_off` instead.
+Two fields and not one, for the reason the Linux prototype found and this one confirmed: a single count would mean that a kernelet holding a spin lock received no ticks. They are also why the aliasing of `irq::disable_local` and `DisabledLocalIrqGuard` to the preemption count is withdrawn ([register D18](../../../notes/design-register.md#decisions)): the L1 bottom half calls `disable_preempt()` and then `arch::irq::enable_local()`, which are two distinct facilities, and under the aliasing the second would have to lower the count the first just raised. The four real `arch::irq` primitives sit over `irq_off` instead.
 
 **The redirect.** OSTD adds one hook where `trap_handler` is about to return to kernel mode. *Checked on the tree*: the kernel-mode path `_trap_from_kernel` saves every general register and returns with `iretq`, and `trap_handler(f: &mut TrapFrame)` may rewrite the frame, whose last five words are exactly what the `iretq` consumes. The hook fires only when **all six** of these hold:
 
@@ -62,7 +62,7 @@ Two prerequisites make the yield land promptly, both additions to OSTD and both 
 
 ## The quota, and what share a sandbox gets
 
-The configuration's quota is enforced by **parking the carriers**, at the host tick and at the yield stub. The old mechanism parked each *task* at its next quiescent point, and there are no per-task parks left; nothing in OSTD throttles a computing host kernel thread from outside, and the run queue has no throttled state, but `park_current` and `unpark_target` act on a host task and a carrier is one (register D62, kept as the bound, with the carrier as its object). **[unverified]**: chosen with reasons, and not implemented by the prototype.
+The configuration's quota is enforced by **parking the carriers**, at the host tick and at the yield stub. The old mechanism parked each *task* at its next quiescent point, and there are no per-task parks left; nothing in OSTD throttles a computing host kernel thread from outside, and the run queue has no throttled state, but `park_current` and `unpark_target` act on a host task and a carrier is one ([register D62](../../../notes/design-register.md#decisions), kept as the bound, with the carrier as its object). **[unverified]**: chosen with reasons, and not implemented by the prototype.
 
 **Proportional share is not held on this host.** A sandbox's share is the sum of its carriers' shares, and *checked on the tree*, `kernel/core/src/sched/sched_class/fair.rs` carries a per-*thread* weight of 1024·1.25<sup>−nice</sup> with no group entity anywhere under `kernel/core/src/sched/`. Two sandboxes at the same `nice` with two and eight virtual CPUs get one share against four. What the back-port does buy is real and smaller than fairness: **a tenant's thread count stops buying machine share**, because the currency is now the operator-chosen virtual CPU count rather than the tenant-chosen thread count.
 
@@ -70,7 +70,7 @@ A **group scheduler in the host kernel is therefore a named prerequisite** of th
 
 ## What this asks of OSTD {#asks}
 
-Additions, not host-specific ones — each is needed whichever kernel is the host (register D118): the trap-return redirect hook; `vcpu_idle` with a deadline, since `halt_cpu()` is the only idle primitive and takes no argument (register D122); the `might_preempt` checks above, in two `Drop` implementations, the four `arch::irq` primitives and three architectures' trap paths; an interrupt-stack-table entry for vector 8 ([Tasks](tasks.md#stacks)); and an extended quiescent set for RCU, since a grace period completes only when every processor has switched and a virtual CPU asleep in `vcpu_idle` passes no switch point.
+Additions, not host-specific ones — each is needed whichever kernel is the host ([register D118](../../../notes/design-register.md#decisions)): the trap-return redirect hook; `vcpu_idle` with a deadline, since `halt_cpu()` is the only idle primitive and takes no argument ([register D122](../../../notes/design-register.md#decisions)); the `might_preempt` checks above, in two `Drop` implementations, the four `arch::irq` primitives and three architectures' trap paths; an interrupt-stack-table entry for vector 8 ([Tasks](tasks.md#stacks)); and an extended quiescent set for RCU, since a grace period completes only when every processor has switched and a virtual CPU asleep in `vcpu_idle` passes no switch point.
 
 ## Costs
 
@@ -87,8 +87,8 @@ Additions, not host-specific ones — each is needed whichever kernel is the hos
 
 ## What this page decides {#decides}
 
-- **Virtual interrupts are delivered by redirecting a carrier at a trap return, under six conditions** (register D117, this host's binding; it retires D9 and D11, the worker jobs, and rewrites D16, which is no longer a task switch. D119, Linux's mirrored preemption count, has no counterpart here: there is no mirror to build). **[unverified]** in one respect: the stack hand-off is exercised by this prototype and by no other, and the Linux prototype kept the interrupted instruction pointer in the record instead.
-- **The bound yields and is counted by the host** (register D124, new, replacing the kill of D66's half). The alternative kills correct kernelets, because the bottom half's preemption-off region is not bounded by construction.
-- **The quota parks the carriers** (register D62, kept with a new object). The alternative, refusing to enqueue, would have to live in the class scheduler rather than in OSTD.
+- **Virtual interrupts are delivered by redirecting a carrier at a trap return, under six conditions** ([register D117](../../../notes/design-register.md#decisions), this host's binding; it retires D9 and D11, the worker jobs, and rewrites D16, which is no longer a task switch. D119, Linux's mirrored preemption count, has no counterpart here: there is no mirror to build). **[unverified]** in one respect: the stack hand-off is exercised by this prototype and by no other, and the Linux prototype kept the interrupted instruction pointer in the record instead.
+- **The bound yields and is counted by the host** ([register D124](../../../notes/design-register.md#decisions), new, replacing the kill of D66's half). The alternative kills correct kernelets, because the bottom half's preemption-off region is not bounded by construction.
+- **The quota parks the carriers** ([register D62](../../../notes/design-register.md#decisions), kept with a new object). The alternative, refusing to enqueue, would have to live in the class scheduler rather than in OSTD.
 - **A group scheduler in the host kernel is a prerequisite for proportional share**, and until it exists the property is not held on this host.
 - **A8 stays**: that the host can reach its own voluntary switch from the trap-return path, for the yield stub. Nothing else in OSTD preempts a host kernel thread that computes.
