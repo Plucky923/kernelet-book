@@ -23,7 +23,7 @@ Use exactly these words, and use them consistently:
 ## Voice and honesty
 
 - American spelling: virtualization, behavior, artifact.
-- Every number says where it came from: *measured on the booted prototype*, *measured on the tree* (Asterinas at commit `ab9a4cfdc`), *measured in a model*, or *estimated*. A load-bearing claim that is unverified is marked **[unverified]**.
+- Every number says where it came from: *measured on the booted prototype*, *measured on the tree* (Asterinas at commit `ab9a4cfdc`), *measured in a model*, or *estimated*. A load-bearing claim that is unverified is marked **[unverified]**. Line counts are the one exception to the pin: they are recounted at the newest commit, which they name, by the method in `src/notes/ostd-api-inventory.md`, because the kernel above OSTD grows about a tenth a month.
 
 ## Structure
 

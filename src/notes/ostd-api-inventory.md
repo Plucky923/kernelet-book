@@ -13,7 +13,22 @@ The public API of OSTD as read from the Asterinas tree at commit `ab9a4cfdc72626
 | `kernel/libs` | 17,279 | kernel-side libraries |
 | `osdk/deps/{frame,heap}-allocator` | 2,085 | the allocators the kernel binds into OSTD's hooks |
 
-OSTD with its libraries is 45,598 lines; the kernel above it is 182,848. Both figures are the ones the Overview rounds to 45,600 and 183,000.
+OSTD with its libraries is 45,598 lines; the kernel above it is 182,848. These are raw lines: they include comments, blank lines, unit tests and the RISC-V, LoongArch and Arm code an x86-64 build leaves out. The figures the Overview and the Paper use are the recount below.
+
+### Sizes as built {#sizes-as-built}
+
+Recounted 2026-10-07 with `cloc` (code lines only: no comments, no blank lines), on what an x86-64 build with default features compiles: every `#[cfg(...)]` item evaluated for `target_arch = "x86_64"` with `ktest`, `test` and `debug_assertions` off and `cvm_guest` on (the default), modules so removed dropped with their files (each `#[cfg(ktest)] mod test;`), and the `arch/riscv`, `arch/loongarch` and `arch/arm` code dropped. OSTD's libraries are counted only where they reach the image: `linux-bzimage/setup` and `boot-params`, `id-alloc`, `align_ext` and `ostd-pod/src`. Its proc macros (`ostd-macros`, `padding-struct`, `int-to-c-enum`, `ostd-pod/macros`), the host-side image builder (`linux-bzimage/builder`) and the test framework (`ostd-test`) run at build time or not at all, and are left out.
+
+| measured on the tree | at `ab9a4cfdc` (2026-08-31) | at `0c6053709` (2026-10-02) |
+|---|---|---|
+| `ostd/src`, raw `cloc` | 24,166 | 27,238 |
+| `ostd/src`, as built | 16,915 | 18,574 |
+| OSTD's libraries that reach the image | 1,129 | 1,151 |
+| **OSTD, as built** | **18,044** | **19,725** |
+| `kernel/`, raw `cloc` | 130,914 | 144,976 |
+| **`kernel/`, as built** | **121,644** | **133,625** |
+
+The Overview and the Paper round the newer column to 20,000 and 135,000. The kernel above OSTD grew by about a tenth in the month between the two commits, as file systems, socket types and device drivers were added, so the figure dates quickly. At both commits it has no `unsafe` block outside comments once tests are removed, and 28 and 33 of its crates respectively declare `deny(unsafe_code)` or `forbid(unsafe_code)`.
 
 **How usage was measured.** Every `use ostd::…` statement in `kernel/` was expanded into its leaf paths (nested braces resolved, `as` renames dropped), and the leaves counted: 173 distinct items, 1,182 imports, in 424 files. Inline paths such as `ostd::mm::VmIo` in expressions were counted separately (533 occurrences) and agree in ranking. The column "kernel imports" below is the leaf count; it measures how many files import an item, not how many call sites use it, so it is a proxy for how widely the item is depended on. Items with no import line are used through the prelude, through a macro, or not at all.
 
