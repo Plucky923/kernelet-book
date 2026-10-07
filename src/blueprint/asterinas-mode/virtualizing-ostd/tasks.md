@@ -45,7 +45,7 @@ What changes with upcalls is the guard. `CpuLocalCell`'s single-instruction oper
 
 ## When a carrier dies {#death}
 
-A carrier is the unit of termination as well as of scheduling. Killing a sandbox parks every carrier at its next safe point and runs the exit stub on each; a carrier that will not leave kernelet code is the case the [bound](scheduling.md#cooperative) exists for. Because no kernelet task is a host task, *Exited* means **no carrier is in kernelet text** — not "no stack of the kernelet is in use anywhere", which named a host object that no longer exists ([Faults, termination, and reclamation](../faults-and-reclamation.md)).
+A carrier is the unit of termination as well as of scheduling. Killing a sandbox parks every carrier at its next safe point and runs the exit stub on each; a carrier inside one of the kernelet's critical sections is sent there too, since the exit redirect waives the gate's guard condition ([Scheduling](scheduling.md#upcall)). Because no kernelet task is a host task, *Exited* means **no carrier is in kernelet text** — not "no stack of the kernelet is in use anywhere", which named a host object that no longer exists ([Faults, termination, and reclamation](../faults-and-reclamation.md)).
 
 One piece of the old design becomes dead code and is swept with it: the hand-off of a dead kernelet task's reference to the reaper in `after_switching_to` has nothing to hand off, because the host's `after_switching_to` never sees a kernelet task. The consequence is benign — the kernelet's own replica frees its stacks by the same previous-task mechanism, on its own time.
 

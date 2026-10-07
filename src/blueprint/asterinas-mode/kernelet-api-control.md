@@ -128,8 +128,8 @@ pub struct DeviceDesc {
 pub struct KerneletPolicy {
     /// Oopses (caught panics, reported through the `oops` service call) allowed before the kernelet is killed.
     pub oops_budget: u32,
-    /// Consecutive ticks a task may hold preemption off before the kernelet is killed.
-    pub preempt_off_ticks: u32,
+    // `preempt_off_ticks` is withdrawn: at the cooperation bound a carrier yields and is
+    // counted, and the kernelet is not killed (register D124).
     /// Log bytes per second delivered to the hook; beyond it, records are dropped and counted.
     pub log_bytes_per_sec: u32,
     /// When the kernelet has taken `max_grains` and asks for more: consult
@@ -289,7 +289,7 @@ impl Kernelet {
 
     /// Asks the kernelet to die. `Created → Exited` at once, since nothing has run.
     /// `Running → Dying`: marks the kernelet dying (register D56); the reaper task then
-    /// cancels every parked task and lets each task reach its next quiescent point, where
+    /// wakes or redirects every carrier and lets each reach its next quiescent point, where
     /// it is terminated. Idempotent in `Dying`. Returns at once.
     pub fn kill(&self, reason: KillReason) -> Result<(), StateError>;
 
@@ -312,7 +312,7 @@ impl Kernelet {
 pub enum KerneletState { Created, Running, Dying, Exited, Destroying, Destroyed }
 
 pub enum KillReason {
-    Requested, OopsBudget, PreemptOffTooLong, StackReserve, StackOverflow,
+    Requested, OopsBudget, StackReserve, StackOverflow,
     /// A hook of the endovisor panicked on this kernelet's task; caught by the service wrapper.
     HostHookPanicked,
     /// A page fault in kernelet code with no exception-table entry ([User mode](virtualizing-ostd/user-mode.md)).

@@ -22,7 +22,7 @@ Two fields and not one, for the reason the Linux prototype found and this one co
 
 1. the frame is a kernel-mode frame;
 2. its `rip` lies in `KW_TEXT`;
-3. the record's service depth is zero;
+3. the carrier's host-private service depth is zero;
 4. `guards` is zero and `irq_off` is clear;
 5. `InterruptLevel::current().is_task_context()`;
 6. `rip` is not inside the stub's own range.
@@ -48,6 +48,8 @@ Three more things the hook must do before it returns, each of which is a way the
 **It works.** *Measured on the booted Asterinas prototype*: against an undisturbed run of 0 upcalls and 907 deferrals, the disturbed run took **3,895 upcalls with 0 deferrals, and every checksum chunk was `0xf705414f5604b292`, bit for bit the undisturbed value.** The whole host patch is **50 added lines in three files** — a trap-return hook, two accessors on `UserContext`, and two items widened to `pub` — against 169 lines in 8 files for the Linux host's gate.
 
 **Three targets, not one.** The redirect replaces only the first of the three jobs the old `preempt_switch` did. The other two need stubs of their own: a **yield stub**, which reaches the host's own voluntary switch in task context at depth zero, and an **exit stub** for termination. Without the yield stub the host can never take a processor back from a carrier that computes, and nothing else in OSTD does: *checked*, `might_preempt()` is reached only from `halt_cpu`, the return to user mode, and after an enqueue. That is what [assumption A8](#decides) is about, and it stays.
+
+**The exit redirect waives the fourth condition and keeps the other five.** `guards` and `irq_off` are the kernelet's own fields: a kernelet that set them and spun would otherwise never be sent to the exit stub, since at the bound a carrier yields rather than dies, and it could never be destroyed. The critical sections those fields protect are the kernelet's, and a dying kernelet has no future in which they matter. The host's own state is what the other five protect, and they stay: the third because at depth one the carrier is in host code, where the service epilogue terminates it instead, and the fifth because the host's own bottom half may be in progress beneath the interrupted frame. This is [register D34](../../../notes/design-register.md) restated for the carrier, and it is how the Linux host's [eviction](../../linux-mode/faults-and-reclamation.md#eviction) behaves, which consults neither count.
 
 ## Giving the processor back {#cooperative}
 
@@ -89,6 +91,7 @@ Additions, not host-specific ones — each is needed whichever kernel is the hos
 
 - **Virtual interrupts are delivered by redirecting a carrier at a trap return, under six conditions** ([register D117](../../../notes/design-register.md#decisions), this host's binding; it retires D9 and D11, the worker jobs, and rewrites D16, which is no longer a task switch. D119, Linux's mirrored preemption count, has no counterpart here: there is no mirror to build). **[unverified]** in one respect: the stack hand-off is exercised by this prototype and by no other, and the Linux prototype kept the interrupted instruction pointer in the record instead.
 - **The bound yields and is counted by the host** ([register D124](../../../notes/design-register.md#decisions), new, replacing the kill of D66's half). The alternative kills correct kernelets, because the bottom half's preemption-off region is not bounded by construction.
+- **The exit redirect waives the gate's guard condition** ([register D34](../../../notes/design-register.md), restated for carriers). The alternative, keeping all six conditions, lets a kernelet make itself undestroyable by setting `irq_off` and spinning, since the bound only yields.
 - **The quota parks the carriers** ([register D62](../../../notes/design-register.md#decisions), kept with a new object). The alternative, refusing to enqueue, would have to live in the class scheduler rather than in OSTD.
 - **A group scheduler in the host kernel is a prerequisite for proportional share**, and until it exists the property is not held on this host.
 - **A8 stays**: that the host can reach its own voluntary switch from the trap-return path, for the yield stub. Nothing else in OSTD preempts a host kernel thread that computes.

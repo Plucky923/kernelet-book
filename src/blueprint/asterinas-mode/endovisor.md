@@ -95,7 +95,7 @@ type KerneletCreate = ioc!(KERNELET_CREATE, MAGIC, 0x01, InOutData<CreateArgs>);
     pub num_vcpus: u16,              // the endovisor picks the host CPUs at START
     pub initial_grains: u32, pub max_grains: u32,
     pub nice: i8, pub cpu_quota_us: u32, pub cpu_period_us: u32,           // per-thread `nice`; 0 = uncapped
-    pub oops_budget: u32, pub preempt_off_ticks: u32, pub log_bytes_per_sec: u32, pub idle_tick_hz: u32,
+    pub oops_budget: u32, pub log_bytes_per_sec: u32, pub idle_tick_hz: u32,   // no preempt_off_ticks: the bound yields (register D124)
     pub cmdline_ptr: u64, pub cmdline_len: u32,   // copied in during the call
     pub out_cid: u32,                // written: the sandbox's vsock CID
 }
