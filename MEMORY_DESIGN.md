@@ -11,9 +11,9 @@
 | 3. Audit the kernel proper's use of `VmSpace` (§4.2) | **done**, folded in at iteration 2 |
 | 4. Review the design (reviewer: Linux maintainer, implementer, security skeptic) | first review done on iteration 2: five blocking, eight major, seven minor; all fixed in iteration 3 |
 | 5. Fix and re-review until no blocking issue remains | **done.** Second review on iteration 3: three blocking, five major, ten minor; third on iteration 4: one blocking (the address space's owner), three major, ten minor; fourth on iteration 5: **no blocking issue**, two major, eight minor, fixed in iteration 6. The reviewers' three remaining risks are the prototype's to settle: fork's cost (E9), the range lock under contention (E8), the memory controller's limit path |
-| 6. Prototype (§7) in `kernelet-in-linux-poc` | running; every iteration's changes are forwarded to it |
-| 7. Fold the prototype's findings back; final review | not started |
-| 8. Update the book (§6), `make check` and `make build`, render the Memory page | not started |
+| 6. Prototype (§7) in `kernelet-in-linux-poc` | **done**, built to iteration 6, commits `df220e4d1` and `789b449af` in the prototype worktree; every target passes except one open flake (§7, results) |
+| 7. Fold the prototype's findings back; final review | results folded in at iteration 7 (§5, §7, §9) |
+| 8. Update the book (§6), `make check` and `make build`, render the Memory page | the Linux chapter is rewritten to the design on the branch; the prototype's numbers are being folded into the Memory, Prototype and Endovisor pages and the register |
 
 ---
 
@@ -88,7 +88,7 @@ The semantics on the right of each row are the tree's, as the audit of §4.2 sta
 Removed: `pt_root_register`, `pt_root_unregister`, `tlb_shootdown`. Renamed: `pt_activate` becomes `vm_activate(space)`. Added:
 
 ```c
-int64_t (*vm_create)(void);                                     /* >= 0: space id; publishes the root's paddr in the space record */
+int64_t (*vm_create)(void);                                     /* >= 1: space id, never 0; publishes the root's paddr in the space record */
 int64_t (*vm_destroy)(uint64_t space);
 int64_t (*vm_activate)(uint64_t space);                         /* 0 means "no tenant address space"; never sleeps */
 int64_t (*vm_map)(uint64_t space, uint64_t va, uint64_t paddr, uint32_t prot);   /* prot always has R */
@@ -161,7 +161,7 @@ Audited by a reviewer agent over `kernel/core/src` (`k/` below); the design abov
 
 ## 5. Costs
 
-All *estimated* until §7 measures them.
+Estimated when written; §7's results table has the measured values, which bear the estimates out except where noted there: the first touch and the protect refaults go to zero, a `map` costs 770 cycles against 126, copies are equal, and `fork` alone is 3.4× slower while `fork` plus the child's first pass is 2.3× faster.
 
 - **Per cursor**: one compare-and-swap per stripe to take the range lock and one to release it; a crossing only when contended.
 - **Per page mapped**: one crossing (a service call through the stack switch was measured at 18 cycles on the prototype, without its prologue, whose cost on this host is not yet measured), the address-space read lock, one owner-array load, the PTE lock and store that native Linux also pays, and Linux's `track_pfn_insert()`.
@@ -211,6 +211,27 @@ In `kernelet-in-linux-poc/kernelet-linux`, where vOSTD is a hand-written crate w
 
 Every deviation from this document is a finding, reported with what it changes.
 
+**Results** (*measured on the booted prototype*, phase 5, Linux 6.12 guest on a Xeon E3-1270 v6, TSC at 3,792 MHz, five boots per design, medians of per-boot medians; the full logs and deviations 82–114 are in the prototype's `REPORT.md` and `bench/RESULTS.md`). Both designs build from one tree, `VMSPACE=native` or `VMSPACE=model`, and the model build received the same fixes, so the comparison is between the two designs, not between phases.
+
+| experiment | result |
+|---|---|
+| E1 | `hello`, `probe`, `sched-policy`, `sched-coop` pass on both builds. `sched-fair` and `sched-perf` are flaky on both (passed on re-run; neither creates a `VmSpace`). **`sched-fpu` fails 2 of 6 runs on the native build and 0 of 5 on the model build: a lost virtual-interrupt mask, reproduced, located to the injected scheduler's run-queue lock, not explained. Open.** |
+| E2 | 0 Linux faults for 512 eagerly mapped pages; fault-around takes 1 fault for 16 pages against 17 under the model |
+| E3 | 0 faults on the reads after a protect; exactly 1 `pfn_mkwrite` on the write |
+| E4 | `CONFIG_DEBUG_ATOMIC_SLEEP` reports nothing; the endovisor saw and lifted the mirrored count; no kernelet task switched. The control, with the mirror left in place, is caught at `mmap_read_lock` |
+| E5 | the kernelet stops on vOSTD's R2 assertion before `vm_map` crosses; Linux reports nothing |
+| E6 | first touch of a mapped page **82 cycles (22 ns), 0 faults**, against 2,194 cycles (579 ns) and one fault per page under the model; read after protecting 2 MiB **80 cycles, 0 faults**, against 2,188 cycles and 4,112 refaults; `map` **770 cycles** per page (a crossing) against 126 (none); protect of 2 MiB plus flush 418k cycles against 175k; copies of 64 B and 4 KiB 188 and 400 cycles against 194 and 402 |
+| E7 | reclaim swapped out 30,335 pages, direct and background, no OOM kill; all 512 entries present with the same frames, 0 faults on the read-back, contents intact |
+| E8 | 54 M copies against 72 k map and unmap cycles: 0 torn reads, 4.6 M ownership checks, none failed; the contended `cursor_mut` slept once in `vm_wait`, 102 ms, took the lock after the release with 0 retries and no kernelet task switch on either virtual CPU. With the grace period turned off, one torn copy in two runs: the control shows the hazard without measuring it |
+| E9 | **`fork` of 64 MiB: 10.0 ms native against 2.9 ms under the model; `fork` plus the child's first pass over the memory: 10.6 ms against 24.1 ms; plus the parent's re-read: 11.1 against 34.2 ms**; `munmap` of 64 MiB 0.51 against 0.66 ms. The two crossings per page cost about 770 and 820 cycles each; batching the child's maps, built as an experiment only, brings the fork to 6.8 ms, and the protects are the other half |
+| E10 | 512 pages (the 4 MiB grant holds no more) round-trip through the withheld set intact; the signal is delivered |
+| E11 | a space dropped with interrupts off is retired and drained later, no frame corrupted; with a sibling carrier killed from outside, the surviving thread took 661 k faults in the space with no host warning |
+| `memory.max` | both outcomes, in order: the memory controller's OOM killer kills the virtual CPU's carrier, then that dying carrier's `vm_map` fails with `-KLET_LIMIT` and vOSTD panics the kernelet; the sandbox is torn down with no leak |
+
+The patch is 205 added lines in 9 files, 36 more than phase 4; the ledger is as §3.5 says. `flush_tlb_mm_range()` is declared only `#ifndef MODULE`, so the module carries the prototype itself. Deviations with design content: the batched map is kept as an experiment; `protect_next` skips the crossing when the bits do not change; R2's check is always on, not only in debug builds; a five-level host is refused; copies must be compiler-opaque (`rep movsb`), since LLVM re-read a plain copy's source after the RCU read section; vOSTD gained a minimal RCU for copies and frame release. Found along the way, in earlier phases' code: the system-call return path never adopted the active address space (a tenant could resume in the previous one); exceptions and virtual interrupts taken in user mode re-entered the tenant with its last system call's registers; copies ignored the page offset; a carrier killed in user mode leaked its blank address space, its stack and a module reference; and phase 4's per-switch `lru_gen_add_mm()`, latent until this phase's guest enabled the multi-generation LRU.
+
+Still untested after phase 5: the mirror with and without (R4); `vm_wait`'s kill, `-KLET_STATE` and freezer paths; large pages, `map_iomem`, five-level and page-table-isolation hosts, a security module refusing the inode; P1's individual threats driven at the area; more than two virtual CPUs or one sandbox; a space destroyed while another carrier still has it adopted; batched protects.
+
 ## 8. Review log
 
 *Iteration 1*: draft written; verification and audit launched.
@@ -227,11 +248,15 @@ Every deviation from this document is a finding, reported with what it changes.
 
 *Iteration 6, from the fourth review (no blocking; two major, eight minor, all accepted)*: the address space's owner is the pinned root carrier rather than null, because a null owner costs the sandbox `memory.high` enforcement and its fault and OOM event counts; every acquisition of a lock word preserves the waiters bit; the drain excludes `user_run`; the ledger counts two helpers and five exports in the book's own convention; the helper takes no lazy-TLB reference and states the x86 barrier dependency; `vm_unmap` returns 0; `vm_wait` is killable and freezable; `RwLock` guards count as spinning. One more finding against the prototype as built: each carrier's blank address space keeps that carrier as owner past its death (`carrier.c:225-229`, `vmem.c:596-602`), a tracing-only host use-after-free; the fix is to drop the blank space at first adoption, as the User mode page already says.
 
+*Iteration 7, the prototype's results*: §7 gains the results table, §5 the measured values, §9 the fork cost and the `sched-fpu` flake. No change to the mechanisms: every experiment that bears on the design passed, and the deviations are implementation findings. Space identifiers start at 1, so that `vm_activate(0)` is unambiguous (a reviewer's question from the book update).
+
 *Iteration 5, finding against the current design*: the model design creates each model's Linux address space with `mm_alloc()` from the creating carrier, so its `owner` is that carrier without a reference, and the same use-after-free follows once that carrier dies while siblings fault. The fix is the same null owner, whichever design is kept.
 
 ## 9. Open questions
 
-- Whether the mirror (D119) earns its keep once services may sleep (R4): to be decided by measurement, not here.
+- Whether the mirror (D119) earns its keep once services may sleep (R4): to be decided by measurement, not here; phase 5 ran every experiment with the mirror on.
+- **`fork`.** Measured at 10.0 ms for 64 MiB against 2.9 ms under the model, because of two crossings per page, while everything after the fork is faster. Batching the child's maps, measured as an experiment at 6.8 ms, recovers a third; batching the protects would take the rest. Either needs a form that keeps `query`, `find_next` and `jump` exact and the kernel proper's reference arithmetic intact; the simplest candidate is a buffer that vOSTD drains before any read of the same stripe and at the cursor's release. Recorded as the extension, not adopted.
+- **The `sched-fpu` flake on the native build** (2 of 6 runs; a lost virtual-interrupt mask near the injected scheduler's run-queue lock) is reproduced and not explained. It does not involve a `VmSpace`, but it appeared with this phase and must be run down before the chapter calls phase 5 passed without qualification.
 - The range lock's striping (how many words per space, and whether a 2 MiB region is the right grain for fault-around's sixteen pages) is a tuning question for the prototype.
 - Large pages (§3.6): when, and whether `prot`'s cache policy needs more than write-back; the kernel proper never asks for anything else today.
 - Whether `vm_destroy` should be allowed while a carrier still has the space adopted (today's rule: the carrier drops its reference later), or `VmSpace::drop` should first force the virtual CPU off it.
