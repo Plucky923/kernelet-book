@@ -18,7 +18,7 @@ Given at create, completed by attaching devices before start, and fixed from sta
 | virtual CPUs | their number, 1 to 64; each is one [carrier](virtualizing-ostd/tasks.md#carriers) |
 | initial and maximum grains | memory at start, and the ceiling `grains_request` may reach, in units of 2 MiB |
 | maximum tasks | the bound on kernelet stacks in the sandbox's [pool](virtualizing-ostd/tasks.md#stacks), the boot stacks included, so at least the number of virtual CPUs; `kstack_alloc` fails beyond it |
-| maximum models | the bound on tenant address spaces registered at once, each of which is a Linux address space; `pt_root_register` fails beyond it |
+| maximum address spaces | the bound on tenant address spaces (`VmSpace`s) at once, each of which is a Linux address space; `vm_create` fails beyond it |
 | command line | passed to the kernel proper |
 | devices | each with a kind, a register-file size, a virtual interrupt line and the virtual CPU it is bound to |
 | policy | the oops budget, the log rate in bytes per second, and the limit on channel connections |
@@ -83,8 +83,8 @@ The list matters because destroy must account for every entry, and because a str
 - identity, state, and a count of operations in progress (destroy waits for it to reach zero);
 - the kind, the configuration, the instance's base address and its private pages;
 - the grant: each run's physical base, length and Linux page handle; the metadata region;
-- the registered models (tenant page-table roots), each with its file object, its Linux address space and its reader-writer lock;
-- the carriers, one per virtual CPU: for each, the Linux task, the lifeline, the service-call depth, the saved stack pointers, Linux's preemption count as it was on entry and the kernelet's increment remembered across a service call, the time of its last real scheduling event, the activated model, the pending exception, the `user_run` context pointer, the *leaving* and *do not come back* marks, the yield stub's saved instruction pointer, the preemption notifier, registered on the carrier and unregistered as it leaves for good; the floating-point staging buffer;
+- the tenant address spaces, each with its identifier, its Linux address space and the endovisor's reference on it, its file object, its shared record and its wait queue; and the task reference that pins the root carrier as their owner;
+- the carriers, one per virtual CPU: for each, the Linux task, the lifeline, the service-call depth, the saved stack pointers, Linux's preemption count as it was on entry and the kernelet's increment remembered across a service call, the time of its last real scheduling event, the activated tenant address space, the pending exception, the `user_run` context pointer, the *leaving* and *do not come back* marks, the yield stub's saved instruction pointer, the preemption notifier, registered on the carrier and unregistered as it leaves for good; the floating-point staging buffer;
 - the virtual CPUs' shared records;
 - the pool of kernelet stacks, boot stacks included, and which of them are out;
 - the devices: model state, inbox, device thread, the Linux file behind it;

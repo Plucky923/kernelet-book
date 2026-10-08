@@ -44,7 +44,7 @@ A kernelet runs in kernel mode, so nothing in hardware stops its code from execu
 | timestamp counter | identical: `rdtsc`, read directly |
 | port I/O, the interrupt controller, the IOMMU, PCI, ACPI | absent: a use does not compile |
 | enabling and disabling interrupts | virtualized: the architecture primitives behind the interrupts-off guard, the context switch and `halt_cpu` set and restore the virtual CPU's `irq_off` ([Scheduling](scheduling.md#upcall)); the hardware flag is never touched |
-| sending inter-processor interrupts | virtualized as `vcpu_kick`; remote TLB flushes go through [`tlb_shootdown`](memory.md#cache) |
+| sending inter-processor interrupts | virtualized as `vcpu_kick`; remote TLB flushes go through [`vm_flush`](memory.md#flush), and `vm_unmap` flushes what it clears |
 | FS and GS base of a tenant thread | virtualized: OSTD's `FsBase` and `GsBase` write vOSTD's per-task context, which `user_run` applies ([User mode](user-mode.md#fpu)) |
 | floating-point and vector state | never used by kernelet code; a tenant thread's is saved and loaded by the kernel proper through `FpuContext`, which is two services ([User mode](user-mode.md#fpu)) |
 | per-CPU data (`cpu_local!`) | virtualized: the base of this virtual CPU's copy is read from its record, not from a segment register, which is Linux's |

@@ -6,7 +6,7 @@
 
 The kernel proper is written against OSTD's public interface: a few hundred types, functions and macros. vOSTD offers the same interface, and sorts every item into one of three kinds.
 
-- **Identical.** The item's code is the same in vOSTD as in OSTD, because its effect is local to the kernelet: a spin lock, a reference-counted frame handle, a page-table walk over the kernelet's own tables, the unwinder.
+- **Identical.** The item's code is the same in vOSTD as in OSTD, because its effect is local to the kernelet: a spin lock, a reference-counted frame handle, the unwinder.
 - **Virtualized.** The item keeps its name and signature and has a different body. Some virtualized items never leave the kernelet (reading per-CPU data, reading the clock page). The others call the **service table**, the fixed set of host functions a kernelet is handed when it starts ([service half](../kernelet-api-service.md)).
 - **Absent.** The item does not exist in vOSTD, so a use of it fails to compile. Every absent item is something a tenant's kernel must never have: port I/O, the interrupt controller, the IOMMU, sending inter-processor interrupts.
 
@@ -16,7 +16,7 @@ What the host changes is **what stands behind the service table**, and how the k
 
 1. **OSTD's own task layer, identical, where the other host's build virtualizes it.** On the Asterinas host a kernelet task is a host thread, and creating, parking and waking one are service calls. On Linux a kernelet task is OSTD's own object, scheduled by the kernel proper's own scheduler, and what is virtualized is one level down: the *processor*. Starting a secondary CPU, idling, kicking another CPU and receiving an interrupt each have a vOSTD body ([Tasks](tasks.md), [Scheduling](scheduling.md), [Interrupts and time](interrupts-and-time.md)). The rows of the long table for tasks therefore move from *virtualized* to *identical* on this host;
 2. how vOSTD finds the record of the virtual CPU it is running on (through Linux's current-task pointer, rather than a slot the Asterinas host maintains);
-3. how the fallible copy routines reach tenant memory ([by walking the model](memory.md#copies), rather than by dereferencing the tenant's address);
+3. how the fallible copy routines reach tenant memory ([by walking the tenant process's page table](memory.md#copies) through the direct map, rather than by dereferencing the tenant's address);
 4. the function-entry [stack check](../faults-and-reclamation.md#stack), which only Linux needs;
 5. preemption guards that also [raise Linux's own preemption count](scheduling.md#cooperative).
 
@@ -29,7 +29,7 @@ The kernel proper is compiled from identical source on both.
 <div class="tag">One interface, a different machine underneath</div>
 <div class="title">What each part of OSTD becomes on Linux</div>
 </div>
-<svg viewBox="0 0 900 392" role="img" aria-label="Three columns. Left: what the kernel proper uses, unchanged: Task and TaskOptions; the Scheduler trait, WaitQueue and the idle loop; UserMode execute; VmSpace and its cursors; VmReader and VmWriter; FrameAllocOptions; IrqLine and timers; IoMem; per-CPU data and preemption guards; println and poweroff. Middle: what vOSTD does: runs OSTD's own tasks and context switch, with stacks from a service call; idles and kicks virtual CPUs by service call; calls user_run; keeps a page table as a model; walks the model and copies through the direct map; allocates from the grant; takes virtual interrupts as pending bits and an upcall; makes one service call per register access; indexes per-CPU data by virtual CPU and mirrors its guard depth; calls log_write and stop. Right: what Linux provides: memory for stacks, and no knowledge of the tasks; one carrier per virtual CPU, asleep or awake; the gate in the entry path; a memory area whose fault handler fills Linux's page table from the model; nothing at all for copies; pages from the page allocator, charged to the sandbox's control group; the watch timer, high-resolution timers and wakeups; device models over files and sockets; its per-processor preemption count; a log ring and the end of the sandbox.">
+<svg viewBox="0 0 900 392" role="img" aria-label="Three columns. Left: what the kernel proper uses, unchanged: Task and TaskOptions; the Scheduler trait, WaitQueue and the idle loop; UserMode execute; VmSpace and its cursors; VmReader and VmWriter; FrameAllocOptions; IrqLine and timers; IoMem; per-CPU data and preemption guards; println and poweroff. Middle: what vOSTD does: runs OSTD's own tasks and context switch, with stacks from a service call; idles and kicks virtual CPUs by service call; calls user_run; turns each change to a page table into a service call; walks Linux's page table and copies through the direct map; allocates from the grant; takes virtual interrupts as pending bits and an upcall; makes one service call per register access; indexes per-CPU data by virtual CPU and mirrors its guard depth; calls log_write and stop. Right: what Linux provides: memory for stacks, and no knowledge of the tasks; one carrier per virtual CPU, asleep or awake; the gate in the entry path; the tenant process's address space, whose page table the endovisor edits with Linux's own functions; nothing at all for copies; pages from the page allocator, charged to the sandbox's control group; the watch timer, high-resolution timers and wakeups; device models over files and sockets; its per-processor preemption count; a log ring and the end of the sandbox.">
 <defs>
 <linearGradient id="vo-cg" x1="0" y1="0" x2="1" y2="0">
 <stop offset="0%" stop-color="#00F7FF" stop-opacity=".22"/>
@@ -56,10 +56,10 @@ The kernel proper is compiled from identical source on both.
 <text x="32" y="49">Task, TaskOptions</text><text x="32" y="85">Scheduler, WaitQueue, the idle loop</text><text x="32" y="121">UserMode::execute</text><text x="32" y="157">VmSpace, cursors, TlbFlusher</text><text x="32" y="193">VmReader, VmWriter (tenant memory)</text><text x="32" y="229">FrameAllocOptions, Frame, Segment</text><text x="32" y="265">IrqLine, timers, Jiffies</text><text x="32" y="301">IoMem (device registers)</text><text x="32" y="337">cpu_local!, disable_preempt</text><text x="32" y="373">println!, power::poweroff</text>
 </g>
 <g fill="#8FF6FC">
-<text x="326" y="49">OSTD's own tasks; kstack_alloc</text><text x="326" y="85">virtual CPUs: vcpu_idle, vcpu_kick</text><text x="326" y="121">user_run service</text><text x="326" y="157">keeps a page table: the model</text><text x="326" y="193">walks the model, uses the direct map</text><text x="326" y="229">own allocator over the grant</text><text x="326" y="265">pending bits and an upcall</text><text x="326" y="301">one service call per access</text><text x="326" y="337">indexes by virtual CPU; mirrors depth</text><text x="326" y="373">log_write, stop services</text>
+<text x="326" y="49">OSTD's own tasks; kstack_alloc</text><text x="326" y="85">virtual CPUs: vcpu_idle, vcpu_kick</text><text x="326" y="121">user_run service</text><text x="326" y="157">vm_map, vm_unmap, vm_protect</text><text x="326" y="193">walks Linux's table, the direct map</text><text x="326" y="229">own allocator over the grant</text><text x="326" y="265">pending bits and an upcall</text><text x="326" y="301">one service call per access</text><text x="326" y="337">indexes by virtual CPU; mirrors depth</text><text x="326" y="373">log_write, stop services</text>
 </g>
 <g fill="#9AA0BE">
-<text x="620" y="49">memory for stacks; it sees no tasks</text><text x="620" y="85">a carrier per virtual CPU</text><text x="620" y="121">the gate in the entry path</text><text x="620" y="157">its page table as a cache, by fault</text><text x="620" y="229">page allocator, charged by cgroup</text><text x="620" y="265">the watch timer, hrtimers, wakeups</text><text x="620" y="301">models over files and sockets</text><text x="620" y="337">its own preemption count</text><text x="620" y="373">a log ring; the end of the sandbox</text>
+<text x="620" y="49">memory for stacks; it sees no tasks</text><text x="620" y="85">a carrier per virtual CPU</text><text x="620" y="121">the gate in the entry path</text><text x="620" y="157">the process's own page table</text><text x="620" y="229">page allocator, charged by cgroup</text><text x="620" y="265">the watch timer, hrtimers, wakeups</text><text x="620" y="301">models over files and sockets</text><text x="620" y="337">its own preemption count</text><text x="620" y="373">a log ring; the end of the sandbox</text>
 </g>
 <g fill="#6A6F8C">
 <text x="620" y="193">nothing: Linux is not involved</text>
@@ -74,7 +74,7 @@ The kernel proper is compiled from identical source on both.
 
 ## In this section
 
-- [Memory](memory.md): grains from Linux's page allocator; the kernelet's page table as a model and Linux's as a cache of it; reaching tenant memory without dereferencing it.
+- [Memory](memory.md): grains from Linux's page allocator; a `VmSpace` as the tenant process's Linux address space, edited by service call; reaching tenant memory without dereferencing it.
 - [Tasks, virtual CPUs, and carriers](tasks.md): the kernelet's own tasks, the carriers that are its processors, the root carrier, kernelet stacks, and the watch timer.
 - [Scheduling](scheduling.md): the two levels, virtual interrupts and the upcall, and how a kernelet and Linux share a processor politely and within bounds.
 - [Interrupts and time](interrupts-and-time.md): virtual interrupt lines, the clock page and deadlines.
